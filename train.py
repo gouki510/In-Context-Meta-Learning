@@ -107,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_classes", type=int, default=512)
     parser.add_argument("--eps", type=float, default=0.1)
     parser.add_argument("--alpha", type=float, default=0)
+    parser.add_argument("--device", type=str, default="cuda:1")
     
     config = MainConfig()
     
@@ -130,6 +131,9 @@ if __name__ == "__main__":
     config.icldataconfig.alpha = parser.parse_args().alpha
     config.iwldataconfig.alpha = parser.parse_args().alpha
     config.icl2dataconfig.alpha = parser.parse_args().alpha
+    
+    config.device = parser.parse_args().device
+    
     
     
     main(config)
