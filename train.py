@@ -4,18 +4,19 @@ from tqdm import tqdm
 import torch
 from torch import nn
 from dataclasses import dataclass, asdict
-from data import SamplingLoader, IterDataset
+from data import SamplingLoader, IterDataset, SamplingDataset
 from model import InputEmbedder, Transformer, TransformerICL
 from config import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
 import numpy as np
+import os
 
 
 
 def cal_acc(t,p):
     p_arg = torch.argmax(p,dim=1)
     return torch.sum(t == p_arg) / p.shape[0]
-def to_gpu_dict(dic, device="cuda:1"):
+def to_gpu_dict(dic, device="cuda:0"):
     dic = {k:v.to(device) for k,v in dic.items()}
     return dic
 
@@ -29,25 +30,27 @@ def main(config):
     iwldataconfig = config.iwldataconfig
     icl2dataconfig = config.icl2dataconfig
     # data
-    trainloader = SamplingLoader(traindataconfig)
+    Dataset = SamplingDataset(traindataconfig)
+    
+    trainloader = SamplingLoader(traindataconfig, Dataset)
     train_seq_generator = trainloader.get_seq
     train_dataset = IterDataset(train_seq_generator)
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=trainconfig.batch_size)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    iclloader = SamplingLoader(icldataconfig)
+    iclloader = SamplingLoader(icldataconfig, Dataset)
     icl_seq_generator = iclloader.get_seq
     icl_dataset = IterDataset(icl_seq_generator)
-    icl_dataloader = torch.utils.data.DataLoader(icl_dataset, batch_size=trainconfig.batch_size)
+    icl_dataloader = torch.utils.data.DataLoader(icl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    iwlloader = SamplingLoader(iwldataconfig)
+    iwlloader = SamplingLoader(iwldataconfig, Dataset)
     iwl_seq_generator = iwlloader.get_seq
     iwl_dataset = IterDataset(iwl_seq_generator)
-    iwl_dataloader = torch.utils.data.DataLoader(iwl_dataset, batch_size=trainconfig.batch_size)
+    iwl_dataloader = torch.utils.data.DataLoader(iwl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    icl2loader = SamplingLoader(icl2dataconfig)
+    icl2loader = SamplingLoader(icl2dataconfig, Dataset)
     icl2_seq_generator = icl2loader.get_seq
     icl2_dataset = IterDataset(icl2_seq_generator)
-    icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size)
+    icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
     # model
     embedder = InputEmbedder(modelconfig)
@@ -55,17 +58,22 @@ def main(config):
     model.to(config.device)
 
     # optimizer
-    optimizer =  torch.optim.SGD(model.parameters(), lr=trainconfig.lr)
+    if trainconfig.optimizer == "adam":
+        optimizer =  torch.optim.Adam(model.parameters(), lr=trainconfig.lr)
+    elif trainconfig.optimizer == "adamw":
+        optimizer =  torch.optim.AdamW(model.parameters(), lr=trainconfig.lr)
+    elif trainconfig.optimizer == "sgd":
+        optimizer =  torch.optim.SGD(model.parameters(), lr=trainconfig.lr)
 
     # loss
     criterion = nn.CrossEntropyLoss()
     step = 0
     for (data_dict, icl_data_dict, iwl_data_dict, icl2_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader, icl2_dataloader):
         model.train()   
-        data_dict = to_gpu_dict(data_dict)
-        icl_data_dict = to_gpu_dict(icl_data_dict)
-        iwl_data_dict = to_gpu_dict(iwl_data_dict)
-        icl2_data_dict = to_gpu_dict(icl2_data_dict)
+        data_dict = to_gpu_dict(data_dict, device=config.device)
+        icl_data_dict = to_gpu_dict(icl_data_dict, device=config.device)
+        iwl_data_dict = to_gpu_dict(iwl_data_dict , device=config.device)
+        icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
         
         logits = model(data_dict["examples"], data_dict["labels"])
         query_logit = logits[:,-1,:]
@@ -107,7 +115,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_classes", type=int, default=512)
     parser.add_argument("--eps", type=float, default=0.1)
     parser.add_argument("--alpha", type=float, default=0)
-    parser.add_argument("--device", type=str, default="cuda:1")
+    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--p_bursty", type=float, default=1)
     
     config = MainConfig()
     
@@ -131,6 +140,11 @@ if __name__ == "__main__":
     config.icldataconfig.alpha = parser.parse_args().alpha
     config.iwldataconfig.alpha = parser.parse_args().alpha
     config.icl2dataconfig.alpha = parser.parse_args().alpha
+    
+    config.traindataconfig.p_bursty = parser.parse_args().p_bursty
+    config.icldataconfig.p_bursty = parser.parse_args().p_bursty
+    config.iwldataconfig.p_bursty = parser.parse_args().p_bursty
+    config.icl2dataconfig.p_bursty = parser.parse_args().p_bursty
     
     config.device = parser.parse_args().device
     

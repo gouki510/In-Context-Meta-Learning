@@ -15,6 +15,7 @@ class TransformerConfig:
   p_dim: int = 65
   d_emb: int = 128
   num_classes = 512
+  
 
 @dataclass
 class TrainDataConfig:
@@ -28,6 +29,7 @@ class TrainDataConfig:
   data_type: str = "bursty" # bursty, holdout, no_support, flip
   num_seq: int = 8
   num_holdout_classes: int = 10
+  burstiness_classes: int = range(0, num_seq//ways)
 
 @dataclass
 class IWLDataConfig(TrainDataConfig):
@@ -47,7 +49,7 @@ class TrainConfig:
   batch_size: int = 128
   optimize_step: int = int(2e5)
   lr: float = 0.01
-  optimizer: str = "sgd"
+  optimizer: str = "sgd" # adam, sgd, adamw
 
 @dataclass
 class MainConfig:

@@ -249,7 +249,7 @@ class InputEmbedder(nn.Module):
         self.Emb = nn.Linear(self._emb_dim, self._emb_dim)
 
         self.label_embs = nn.Parameter(
-            torch.randn(self._num_classes, self._emb_dim)
+            torch.randn(self._num_classes, self._emb_dim) / np.sqrt(self._emb_dim)
         )
 
     def forward(self, examples, labels, is_training=True):
@@ -274,8 +274,7 @@ class InputEmbedder(nn.Module):
         # Embed the labels.
         n_emb_classes = self._num_classes
         labels_to_embed = labels
-        embs = self.get_parameter("label_embs")
-        h_label = embs[labels_to_embed]  # (B, SS, E)
+        h_label = self.label_embs[labels_to_embed]  # (B, SS, E)
         hh = torch.empty(
             (h_example.shape[0], h_example.shape[1] * 2 - 1, h_example.shape[2]),
             dtype=h_example.dtype,
