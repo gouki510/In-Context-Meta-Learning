@@ -1,5 +1,3 @@
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -91,7 +89,7 @@ class Attention(nn.Module):
     """
     b : batch size
     d : embedding size of token
-    p : vocabraly size (113 or 3)
+    p : vocabraly size 
     i : number of heads
     h : embedding size of each heads
     n_ctx : token size
@@ -108,10 +106,11 @@ class Attention(nn.Module):
         self.W_V = nn.Parameter(
             torch.randn(num_heads, d_head, d_model) / np.sqrt(d_model)
         )
-        self.W_O = nn.Parameter(
-            torch.randn(d_model, d_head * num_heads) / np.sqrt(d_model)
-        )
+        # self.W_O = nn.Parameter(
+        #     torch.randn(d_model, d_head * num_heads) / np.sqrt(d_model)
+        # )
         self.register_buffer("mask", torch.tril(torch.ones((n_ctx, n_ctx))))
+        self.register_buffer("atten_matrix", torch.zeros((num_heads, n_ctx, n_ctx)))
         self.d_head = d_head
 
     def forward(self, x):
@@ -123,10 +122,19 @@ class Attention(nn.Module):
             1 - self.mask[: x.shape[-2], : x.shape[-2]]
         )
         attn_matrix = F.softmax(attn_scores_masked / np.sqrt(self.d_head), dim=-1)
+        self.set_attention_matrix(attn_matrix)
         z = torch.einsum("biph,biqp->biqh", v, attn_matrix)
         z_flat = einops.rearrange(z, "b i q h -> b q (i h)")
-        out = torch.einsum("df,bqf->bqd", self.W_O, z_flat)
+        # out = torch.einsum("df,bqf->bqd", self.W_O, z_flat)
+        out = z_flat
         return out
+
+    def set_attention_matrix(self, attn_matrix):
+        for i in range(self.atten_matrix.shape[0]):
+            self.atten_matrix[i] = attn_matrix[i].mean(dim=0)
+    
+    def get_attention_matrix(self):
+        return self.atten_matrix
 
 
 class Dense(nn.Module):
@@ -134,6 +142,7 @@ class Dense(nn.Module):
         super().__init__()
         self.W = nn.Parameter(torch.randn(d_out, d_in))
         torch.nn.init.normal_(self.W, mean=0, std=weight_scale / np.sqrt(d_in))
+        self.b = nn.Parameter(torch.zeros(d_out))
 
     def set_weight_ratio(self, weight_ratio):
         self.W = nn.Parameter(self.W * weight_ratio)
@@ -142,7 +151,8 @@ class Dense(nn.Module):
         self.W = nn.Parameter(self.W * torch.sqrt(weight_ratio))
 
     def forward(self, x):
-        return x @ self.W.T
+        x = x @ self.W.T + self.b
+        return x
 
 
 # for Transformer
@@ -242,14 +252,16 @@ class InputEmbedder(nn.Module):
       name: Optional name for the module.
     """
         super(InputEmbedder, self).__init__()
-        self._num_classes = conf.d_vocab
-        self._emb_dim = conf.d_emb
+        self.num_labels = conf.d_vocab
+        self.emb_dim = conf.d_emb
         self.p_dim = conf.p_dim
+        self.emb_dim_content = self.emb_dim - self.p_dim
+        self.n_ctx = conf.n_ctx
 
-        self.Emb = nn.Linear(self._emb_dim, self._emb_dim)
+        self.Emb = nn.Linear(self.emb_dim, self.emb_dim)
 
         self.label_embs = nn.Parameter(
-            torch.randn(self._num_classes, self._emb_dim) / np.sqrt(self._emb_dim)
+            torch.randn(self.num_labels, self.emb_dim_content) / np.sqrt(self.emb_dim_content)
         )
 
     def forward(self, examples, labels, is_training=True):
@@ -268,17 +280,20 @@ class InputEmbedder(nn.Module):
         # Encode the example inputs into shape (B, SS, E)
         B, SS, D = examples.shape
         # pos encoding
-        pos_enc = F.one_hot(torch.arange(SS), num_classes=self.p_dim).repeat(B,1,1).to(examples.device)
+        pos_enc = F.one_hot(torch.arange(start=0,end=self.n_ctx+1,step=2), num_classes=self.p_dim).repeat(B,1,1).to(examples.device)
         h_example = torch.cat([examples, pos_enc], dim=2)
 
         # Embed the labels.
-        n_emb_classes = self._num_classes
         labels_to_embed = labels
-        h_label = self.label_embs[labels_to_embed]  # (B, SS, E)
+        h_label = self.label_embs[labels_to_embed]  # (B, SS, D)
+        pos_enc = F.one_hot(torch.arange(start=1,end=self.n_ctx+1,step=2), num_classes=self.p_dim).repeat(B,1,1).to(examples.device)
+        h_label = torch.cat([h_label, pos_enc], dim=2) # (B, SS, E)
+        
         hh = torch.empty(
             (h_example.shape[0], h_example.shape[1] * 2 - 1, h_example.shape[2]),
             dtype=h_example.dtype,
         ).to(h_example.device)
+        
         hh[:, 0::2] = h_example
         hh[:, 1::2] = h_label[:, :-1]
 
@@ -356,6 +371,159 @@ class TransformerICL(nn.Module):
         super().__init__()
         num_layers = config.num_layers
         d_model = config.d_emb
+        d_mlp = config.d_emb 
+        d_head = config.d_emb // config.num_heads
+        num_heads = config.num_heads
+        n_ctx = config.n_ctx
+        act_type = config.act_type
+        use_cache = config.use_cache
+        use_ln = config.use_ln
+        self.cache = {}
+        self.use_cache = use_cache
+        d_vocab = config.d_vocab
+
+        self.embedder = embedder
+        # self.pos_embed = PosEmbed(n_ctx, d_model)
+        self.atten1 = Attention(d_model, num_heads, d_head, n_ctx)
+        self.atten2 = Attention(d_model, num_heads, d_head, n_ctx)
+        self.mlp1 = nn.Linear(d_model, d_model)
+        self.mlp2 = nn.Linear(d_model, d_model)
+        self.classifier = nn.Linear(d_model, d_vocab)
+        self.use_ln = use_ln
+
+        for name, module in self.named_modules():
+            if type(module) == HookPoint:
+                module.give_name(name)
+
+    def forward(self, x, labels):
+        x = self.embedder(x, labels)
+        x = self.atten1(x) + x
+        x = self.atten2(x) + x
+        x = self.mlp1(x) 
+        x = F.relu(x)
+        x = self.mlp2(x)
+        x = F.relu(x)
+        x = self.classifier(x)
+        return x
+
+    def set_use_cache(self, use_cache):
+        self.use_cache = use_cache
+
+    def hook_points(self):
+        return [module for name, module in self.named_modules() if "hook" in name]
+
+    def remove_all_hooks(self):
+        for hp in self.hook_points():
+            hp.remove_hooks("fwd")
+            hp.remove_hooks("bwd")
+
+    def cache_all(self, cache, incl_bwd=False):
+        # Caches all activations wrapped in a HookPoint
+        def save_hook(tensor, name):
+            cache[name] = tensor.detach()
+
+        def save_hook_back(tensor, name):
+            cache[name + "_grad"] = tensor[0].detach()
+
+        for hp in self.hook_points():
+            hp.add_hook(save_hook, "fwd")
+            if incl_bwd:
+                hp.add_hook(save_hook_back, "bwd")
+                
+    def get_attention_matrix1(self):
+        return self.atten1.get_attention_matrix()
+    
+    def get_attention_matrix2(self):
+        return self.atten2.get_attention_matrix()
+                
+                
+class MultiInputEmbedder(nn.Module):
+    """Input embedder."""
+
+    def __init__(self, conf):
+
+        """Initialize the input embedder.
+
+    Args:
+      num_classes: Total number of output classes.
+      emb_dim: Dimensionality of example and label embeddings.
+      example_encoding: How to encode example inputs.
+        'resnet': simple resnet encoding
+        'linear': flatten and pass through a linear layer
+        'embedding': pass through an embedding layer
+      flatten_superpixels: Whether to flatten the output of the resnet (instead
+        of taking a mean over superpixels).
+      example_dropout_prob: Dropout probability on example embeddings. Note that
+        these are applied at both train and test.
+      concatenate_labels: Whether to concatenate example and label embeddings
+        into one token for each (example, label) pair, rather than being fed to
+        the transformer as two separate tokens.
+      use_positional_encodings: Whether to use positional encoding.
+      positional_dropout_prob: Positional dropout probability.
+      name: Optional name for the module.
+    """
+        super(MultiInputEmbedder, self).__init__()
+        self._num_classes = conf.d_vocab
+        self._emb_dim = conf.d_emb
+        self.p_dim = conf.p_dim
+        self.num_tasks = conf.num_tasks
+        self.num_seq_per_task = conf.num_seq_per_task
+
+        self.Emb = nn.Linear(self._emb_dim, self._emb_dim)
+
+        self.label_embs = nn.Parameter(
+            torch.randn(self._num_classes, self._emb_dim) / np.sqrt(self._emb_dim)
+        )
+        
+        self.task_embs = nn.Parameter(
+            torch.randn(self.num_tasks, self._emb_dim) / np.sqrt(self._emb_dim)
+        )
+    
+    def forward(self, examples, labels, tasks):
+        """_summary_
+
+        Args:
+            examples (_type_): _description_
+            labels (_type_): _description_
+            tasks (_type_): _description_
+            is_training (bool): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        # Encode the example inputs into shape (B, T, SS, E)
+        B, T, SS, D = examples.shape
+        examples = examples.view(B, T*SS, D)
+        # pos encoding
+        pos_enc = F.one_hot(torch.arange(T*SS), num_classes=self.p_dim).repeat(B,1,1).to(examples.device)
+        h_example = torch.cat([examples, pos_enc], dim=2) # (B, T*SS, E)
+        
+        # Embed the labels. (B, T, SS, 1) -> (B, T*SS, E)
+        h_label = self.label_embs[labels]  # (B, T, SS, E)
+        h_label = h_label.view(B, T*SS, self._emb_dim) #(B, T*SS, E)
+        
+        # task embedding (B, T) -> (B, T, 1, E)
+        task_embs = self.task_embs[tasks] # (B, T, E)
+        
+        hh = torch.empty(
+            (B, (SS * 2 +1) * T ,  h_example.shape[2]), # (B, S, E),  S = T*(SS*2 + task) 
+            dtype=h_example.dtype, 
+        ).to(h_example.device)
+        hh[:, 0::(SS*2+1)] = task_embs
+        for t in range(T):
+            hh[:, t*(SS*2+1)+1: t*(SS*2+1)+1 + SS*2:2] = h_example[:, t*SS:(t+1)*SS]
+            hh[:, t*(SS*2+1)+2:t*(SS*2+1)+1 + SS*2:2] = h_label[:, t*SS:(t+1)*SS]
+
+        # last label remove
+        hh = hh[:, :-1]
+
+        return hh
+    
+class MultiTransformerICL(nn.Module):
+    def __init__(self, embedder, config):
+        super().__init__()
+        num_layers = config.num_layers
+        d_model = config.d_emb
         d_mlp = config.d_emb * 4
         d_head = config.d_emb // config.num_heads
         num_heads = config.num_heads
@@ -386,8 +554,8 @@ class TransformerICL(nn.Module):
             if type(module) == HookPoint:
                 module.give_name(name)
 
-    def forward(self, x, labels):
-        x = self.embedder(x, labels)
+    def forward(self, examples, labels, tasks):
+        x = self.embedder(examples, labels, tasks)
         for block in self.blocks:
             x = block(x)
         x = self.unembed(x)
@@ -416,3 +584,4 @@ class TransformerICL(nn.Module):
             hp.add_hook(save_hook, "fwd")
             if incl_bwd:
                 hp.add_hook(save_hook_back, "bwd")
+                

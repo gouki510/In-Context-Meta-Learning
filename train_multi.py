@@ -4,13 +4,11 @@ from tqdm import tqdm
 import torch
 from torch import nn
 from dataclasses import dataclass, asdict
-from data import SamplingLoader, IterDataset, SamplingDataset
-from model import InputEmbedder, Transformer, TransformerICL
-from config import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
-from utils import visalize_attention1, visalize_attention2
+from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSamplingLoader
+from model import InputEmbedder, Transformer, TransformerICL, MultiInputEmbedder, MultiTransformerICL
+from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 
 
@@ -24,7 +22,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config):
-    wandb.init(project="induction-head-0311", config=asdict(config))
+    wandb.init(project="induction-head-multi", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -34,29 +32,29 @@ def main(config):
     # data
     Dataset = SamplingDataset(traindataconfig)
     
-    trainloader = SamplingLoader(traindataconfig, Dataset)
+    trainloader = MultiTaskSamplingLoader(traindataconfig, Dataset)
     train_seq_generator = trainloader.get_seq
     train_dataset = IterDataset(train_seq_generator)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    iclloader = SamplingLoader(icldataconfig, Dataset)
+    iclloader = MultiTaskSamplingLoader(icldataconfig, Dataset)
     icl_seq_generator = iclloader.get_seq
     icl_dataset = IterDataset(icl_seq_generator)
     icl_dataloader = torch.utils.data.DataLoader(icl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    iwlloader = SamplingLoader(iwldataconfig, Dataset)
+    iwlloader = MultiTaskSamplingLoader(iwldataconfig, Dataset)
     iwl_seq_generator = iwlloader.get_seq
     iwl_dataset = IterDataset(iwl_seq_generator)
     iwl_dataloader = torch.utils.data.DataLoader(iwl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    icl2loader = SamplingLoader(icl2dataconfig, Dataset)
+    icl2loader = MultiTaskSamplingLoader(icl2dataconfig, Dataset)
     icl2_seq_generator = icl2loader.get_seq
     icl2_dataset = IterDataset(icl2_seq_generator)
     icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
     # model
-    embedder = InputEmbedder(modelconfig)
-    model = TransformerICL(embedder, modelconfig)
+    embedder = MultiInputEmbedder(modelconfig)
+    model = MultiTransformerICL(embedder, modelconfig)
     model.to(config.device)
 
     # optimizer
@@ -77,44 +75,33 @@ def main(config):
         iwl_data_dict = to_gpu_dict(iwl_data_dict , device=config.device)
         icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
         
-        logits = model(data_dict["examples"], data_dict["labels"])
+        logits = model(data_dict["examples"], data_dict["labels"], data_dict["task"])
         query_logit = logits[:,-1,:]
 
         optimizer.zero_grad()
         
-        loss = criterion(query_logit, data_dict["labels"][:,-1],)
+        loss = criterion(query_logit, data_dict["labels"][:,-1, -1])
         loss.backward()
         optimizer.step()
-        train_acc = cal_acc(data_dict["labels"][:, -1], query_logit)
+        train_acc = cal_acc(data_dict["labels"][:, -1, -1], query_logit)
         wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
         
-        if step % trainconfig.every_eval == 0:
-            model.eval()
-            with torch.no_grad():
-                logits = model(icl_data_dict["examples"], icl_data_dict["labels"])
-                query_logit = logits[:,-1,:]
-                icl_acc = cal_acc(icl_data_dict["labels"][:, -1], query_logit)
-                wandb.log({"valid/icl_acc":icl_acc}, step=step)
+        model.eval()
+        with torch.no_grad():
+            logits = model(icl_data_dict["examples"], icl_data_dict["labels"], icl_data_dict["task"])
+            query_logit = logits[:,-1,:]
+            icl_acc = cal_acc(icl_data_dict["labels"][:, -1, -1], query_logit)
+            wandb.log({"valid/icl_acc":icl_acc}, step=step)
 
-                logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"])
-                query_logit = logits[:,-1,:]
-                iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
-                wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
+            logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["task"])
+            query_logit = logits[:,-1,:]
+            iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1, -1], query_logit)
+            wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
 
-                logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"])
-                query_logit = logits[:,-1,:]
-                icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1], query_logit)
-                wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
-                
-                attn_img = visalize_attention1(model)
-                wandb.log({"attention1": attn_img}, step=step)
-                plt.close()
-                plt.cla()
-                
-                attn_img = visalize_attention2(model)
-                wandb.log({"attention2": attn_img}, step=step)
-                plt.close()
-                plt.cla()
+            logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
+            query_logit = logits[:,-1,:]
+            icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1, -1], query_logit)
+            wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
                 
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
@@ -130,8 +117,6 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=0)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--p_bursty", type=float, default=1)
-    parser.add_argument("--p_icl", type=float, default=1)
-    parser.add_argument("--exp_name", type=str, default="some_exp")
     
     config = MainConfig()
     
@@ -161,13 +146,7 @@ if __name__ == "__main__":
     config.iwldataconfig.p_bursty = parser.parse_args().p_bursty
     config.icl2dataconfig.p_bursty = parser.parse_args().p_bursty
     
-    config.traindataconfig.p_icl = parser.parse_args().p_icl
-    config.icldataconfig.p_icl = parser.parse_args().p_icl
-    config.iwldataconfig.p_icl = parser.parse_args().p_icl
-    config.icl2dataconfig.p_icl = parser.parse_args().p_icl
-    
     config.device = parser.parse_args().device
-    config.exp_name = parser.parse_args().exp_name
     
     
     
