@@ -54,6 +54,7 @@ class SamplingLoader(DataLoader):
             x = self.add_noise(mus)
             # permutation shuffle
             ordering = np.random.permutation(self.num_seq)
+            mus = mus[ordering]
             x = x[ordering]
             labels = labels[ordering]
             classes = classes[ordering]
@@ -154,6 +155,7 @@ class SamplingLoader(DataLoader):
         x = self.add_noise(mus)
         # permutation shuffle
         ordering = np.random.permutation(self.num_seq)
+        mus = mus[ordering]
         x = x[ordering]
         labels = labels[ordering]
         classes = classes[ordering]

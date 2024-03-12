@@ -121,8 +121,9 @@ class Attention(nn.Module):
         attn_scores_masked = torch.tril(attn_scores_pre) - 1e10 * (
             1 - self.mask[: x.shape[-2], : x.shape[-2]]
         )
-        attn_matrix = F.softmax(attn_scores_masked / np.sqrt(self.d_head), dim=-1)
-        self.set_attention_matrix(attn_matrix)
+        # attn_matrix = F.softmax(attn_scores_masked / np.sqrt(self.d_head), dim=-1)
+        attn_matrix = F.softmax(attn_scores_masked, dim=-1)
+        self.set_attention_matrix(attn_matrix.detach().cpu())
         z = torch.einsum("biph,biqp->biqh", v, attn_matrix)
         z_flat = einops.rearrange(z, "b i q h -> b q (i h)")
         # out = torch.einsum("df,bqf->bqd", self.W_O, z_flat)
@@ -131,7 +132,7 @@ class Attention(nn.Module):
 
     def set_attention_matrix(self, attn_matrix):
         for i in range(self.atten_matrix.shape[0]):
-            self.atten_matrix[i] = attn_matrix[i].mean(dim=0)
+            self.atten_matrix[i] = attn_matrix.mean(dim=0)[i]
     
     def get_attention_matrix(self):
         return self.atten_matrix
@@ -369,7 +370,7 @@ class Transformer(nn.Module):
 class TransformerICL(nn.Module):
     def __init__(self, embedder, config):
         super().__init__()
-        num_layers = config.num_layers
+        self.num_layers = config.num_layers
         d_model = config.d_emb
         d_mlp = config.d_emb 
         d_head = config.d_emb // config.num_heads
@@ -386,8 +387,11 @@ class TransformerICL(nn.Module):
         # self.pos_embed = PosEmbed(n_ctx, d_model)
         self.atten1 = Attention(d_model, num_heads, d_head, n_ctx)
         self.atten2 = Attention(d_model, num_heads, d_head, n_ctx)
-        self.mlp1 = nn.Linear(d_model, d_model)
-        self.mlp2 = nn.Linear(d_model, d_model)
+        self.mlp_list = nn.ModuleList(
+            [
+                nn.Linear(d_model, d_model) for i in range(self.num_layers)
+            ]
+        )
         self.classifier = nn.Linear(d_model, d_vocab)
         self.use_ln = use_ln
 
@@ -399,10 +403,9 @@ class TransformerICL(nn.Module):
         x = self.embedder(x, labels)
         x = self.atten1(x) + x
         x = self.atten2(x) + x
-        x = self.mlp1(x) 
-        x = F.relu(x)
-        x = self.mlp2(x)
-        x = F.relu(x)
+        for mlp in self.mlp_list:
+            x = mlp(x) 
+            x = F.relu(x)
         x = self.classifier(x)
         return x
 

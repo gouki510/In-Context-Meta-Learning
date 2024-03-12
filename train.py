@@ -24,7 +24,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config):
-    wandb.init(project="induction-head-0311", config=asdict(config))
+    wandb.init(project="induction-head-repoduce", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -86,7 +86,7 @@ def main(config):
         loss.backward()
         optimizer.step()
         train_acc = cal_acc(data_dict["labels"][:, -1], query_logit)
-        wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
+        wandb.log({"train/acc":train_acc.cpu(), "train/loss": loss.cpu()}, step=step)
         
         if step % trainconfig.every_eval == 0:
             model.eval()
@@ -94,17 +94,17 @@ def main(config):
                 logits = model(icl_data_dict["examples"], icl_data_dict["labels"])
                 query_logit = logits[:,-1,:]
                 icl_acc = cal_acc(icl_data_dict["labels"][:, -1], query_logit)
-                wandb.log({"valid/icl_acc":icl_acc}, step=step)
+                wandb.log({"valid/icl_acc":icl_acc.cpu()}, step=step)
 
                 logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"])
                 query_logit = logits[:,-1,:]
                 iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
-                wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
+                wandb.log({"valid/iwl_acc":iwl_acc.cpu()}, step=step)
 
                 logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"])
                 query_logit = logits[:,-1,:]
                 icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1], query_logit)
-                wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
+                wandb.log({"valid/icl2_acc":icl2_acc.cpu()}, step=step)
                 
                 attn_img = visalize_attention1(model)
                 wandb.log({"attention1": attn_img}, step=step)
@@ -115,11 +115,18 @@ def main(config):
                 wandb.log({"attention2": attn_img}, step=step)
                 plt.close()
                 plt.cla()
+            
+            del attn_img, icl2_acc, iwl_acc, icl_acc
                 
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
         if step > trainconfig.optimize_step:
             break
+        
+        # gpu allocation free
+        del data_dict, icl_data_dict, iwl_data_dict, icl2_data_dict, \
+            logits, query_logit, loss, train_acc
+        torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     # args
