@@ -5,9 +5,11 @@ import torch
 from torch import nn
 from dataclasses import dataclass, asdict
 from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSamplingLoader
-from model import InputEmbedder, Transformer, TransformerICL, MultiInputEmbedder, MultiTransformerICL
+from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbedderV1, MultiTaskInputEmbedderV2
 from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
+from utils import visalize_attention1, visalize_attention2
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 
@@ -47,14 +49,14 @@ def main(config):
     iwl_dataset = IterDataset(iwl_seq_generator)
     iwl_dataloader = torch.utils.data.DataLoader(iwl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    icl2loader = MultiTaskSamplingLoader(icl2dataconfig, Dataset)
-    icl2_seq_generator = icl2loader.get_seq
-    icl2_dataset = IterDataset(icl2_seq_generator)
-    icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
+    # icl2loader = MultiTaskSamplingLoader(icl2dataconfig, Dataset)
+    # icl2_seq_generator = icl2loader.get_seq
+    # icl2_dataset = IterDataset(icl2_seq_generator)
+    # icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
     # model
-    embedder = MultiInputEmbedder(modelconfig)
-    model = MultiTransformerICL(embedder, modelconfig)
+    embedder = MultiTaskInputEmbedderV2(modelconfig)
+    model = TransformerICL(embedder, modelconfig)
     model.to(config.device)
 
     # optimizer
@@ -68,40 +70,49 @@ def main(config):
     # loss
     criterion = nn.CrossEntropyLoss()
     step = 0
-    for (data_dict, icl_data_dict, iwl_data_dict, icl2_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader, icl2_dataloader):
+    for (data_dict, icl_data_dict, iwl_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader):
         model.train()   
         data_dict = to_gpu_dict(data_dict, device=config.device)
         icl_data_dict = to_gpu_dict(icl_data_dict, device=config.device)
         iwl_data_dict = to_gpu_dict(iwl_data_dict , device=config.device)
-        icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
+        # icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
         
-        logits = model(data_dict["examples"], data_dict["labels"], data_dict["task"])
+        logits = model(data_dict["examples"], data_dict["labels"], data_dict["tasks"])
         query_logit = logits[:,-1,:]
 
         optimizer.zero_grad()
         
-        loss = criterion(query_logit, data_dict["labels"][:,-1, -1])
+        loss = criterion(query_logit, data_dict["labels"][:, -1])
         loss.backward()
         optimizer.step()
-        train_acc = cal_acc(data_dict["labels"][:, -1, -1], query_logit)
+        train_acc = cal_acc(data_dict["labels"][:, -1], query_logit)
         wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
         
         model.eval()
         with torch.no_grad():
-            logits = model(icl_data_dict["examples"], icl_data_dict["labels"], icl_data_dict["task"])
+            logits = model(icl_data_dict["examples"], icl_data_dict["labels"], icl_data_dict["tasks"])
             query_logit = logits[:,-1,:]
-            icl_acc = cal_acc(icl_data_dict["labels"][:, -1, -1], query_logit)
+            icl_acc = cal_acc(icl_data_dict["labels"][:, -1], query_logit)
             wandb.log({"valid/icl_acc":icl_acc}, step=step)
 
-            logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["task"])
+            logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["tasks"])
             query_logit = logits[:,-1,:]
-            iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1, -1], query_logit)
+            iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
             wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
 
-            logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
-            query_logit = logits[:,-1,:]
-            icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1, -1], query_logit)
-            wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
+            # logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
+            # query_logit = logits[:,-1,:]
+            # icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1, -1], query_logit)
+            # wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
+            attn_img = visalize_attention1(model)
+            wandb.log({"attention1": attn_img}, step=step)
+            plt.close()
+            plt.cla()
+                
+            attn_img = visalize_attention2(model)
+            wandb.log({"attention2": attn_img}, step=step)
+            plt.close()
+            plt.cla()
                 
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
@@ -117,14 +128,17 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=0)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--p_bursty", type=float, default=1)
+    parser.add_argument("--num_tasks", type=int, default=3)
+    parser.add_argument("--num_layer", type=int, default=2)
+    parser.add_argument("--d_model", type=int, default=128)
     
     config = MainConfig()
     
     # set args
-    config.traindataconfig.ways = parser.parse_args().ways
-    config.icldataconfig.ways = parser.parse_args().ways
-    config.iwldataconfig.ways = parser.parse_args().ways
-    config.icl2dataconfig.ways = parser.parse_args().ways
+    config.traindataconfig.item_ways = parser.parse_args().ways
+    config.icldataconfig.item_ways = parser.parse_args().ways
+    config.iwldataconfig.item_ways = parser.parse_args().ways
+    config.icl2dataconfig.item_waysways = parser.parse_args().ways
     
     config.traindataconfig.num_classes = parser.parse_args().num_classes
     config.icldataconfig.num_classes = parser.parse_args().num_classes
@@ -145,6 +159,15 @@ if __name__ == "__main__":
     config.icldataconfig.p_bursty = parser.parse_args().p_bursty
     config.iwldataconfig.p_bursty = parser.parse_args().p_bursty
     config.icl2dataconfig.p_bursty = parser.parse_args().p_bursty
+    
+    config.traindataconfig.num_tasks = parser.parse_args().num_tasks
+    config.icldataconfig.num_tasks = parser.parse_args().num_tasks
+    config.iwldataconfig.num_tasks = parser.parse_args().num_tasks
+    config.icl2dataconfig.num_tasks = parser.parse_args().num_tasks
+    config.modelconfig.num_tasks = parser.parse_args().num_tasks
+    
+    config.modelconfig.num_layers = parser.parse_args().num_layer
+    config.modelconfig.d_model = parser.parse_args().d_model
     
     config.device = parser.parse_args().device
     

@@ -8,15 +8,15 @@ class TransformerConfig:
   d_mlp: int = 128
   d_head: int = 128
   num_heads: int = 1
-  n_ctx: int = int((9*2+1)*3-1)
+  n_ctx: int = int((9*2))
   act_type: str = "ReLU"
   use_cache: bool = False
   use_ln: bool = True
   p_dim: int = 65
   d_emb: int = 128
   num_classes:int = 512
-  num_tasks : int = 3
-  num_seq_per_task: int = 8
+  num_tasks: int = 3
+  task_ways: int = 8
   
 
 @dataclass
@@ -26,15 +26,15 @@ class TrainDataConfig:
   num_labels: int = 32
   eps: float = 0.1
   alpha: float = 0
-  ways: int = 2
+  item_ways: int = 2
   p_bursty: float = 1
   data_type: str = "bursty" # bursty, holdout, no_support, flip
   num_seq: int = 8
   num_holdout_classes: int = 10
-  burstiness_classes: int = range(0, num_seq//ways)
   num_tasks: int = 3
-  num_seq_per_task: int = 8
-
+  task_ways: int = 8
+  p_icl: float = 0
+  
 @dataclass
 class IWLDataConfig(TrainDataConfig):
   data_type: str = "no_support" # bursty, holdout, no_support, flip

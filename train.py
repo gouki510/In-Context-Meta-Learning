@@ -139,6 +139,8 @@ if __name__ == "__main__":
     parser.add_argument("--p_bursty", type=float, default=1)
     parser.add_argument("--p_icl", type=float, default=1)
     parser.add_argument("--exp_name", type=str, default="some_exp")
+    parser.add_argument("--num_layer", type=int, default=2)
+    parser.add_argument("--d_model", type=int, default=128)
     
     config = MainConfig()
     
@@ -172,6 +174,10 @@ if __name__ == "__main__":
     config.icldataconfig.p_icl = parser.parse_args().p_icl
     config.iwldataconfig.p_icl = parser.parse_args().p_icl
     config.icl2dataconfig.p_icl = parser.parse_args().p_icl
+    
+    config.modelconfig.num_layers = parser.parse_args().num_layer
+    
+    config.modelconfig.d_model = parser.parse_args().d_model
     
     config.device = parser.parse_args().device
     config.exp_name = parser.parse_args().exp_name
