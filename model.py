@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import einops
+from mamba_ssm import Mamba
 
 
 class Unembed(nn.Module):
@@ -136,6 +137,7 @@ class Attention(nn.Module):
     
     def get_attention_matrix(self):
         return self.atten_matrix
+    
 
 
 class Dense(nn.Module):
@@ -371,6 +373,7 @@ class TransformerICL(nn.Module):
     def __init__(self, embedder, config):
         super().__init__()
         self.num_layers = config.num_layers
+        self.num_atten_layer = config.num_atten_layer
         d_model = config.d_emb
         self.d_mlp = config.d_mlp
         d_head = config.d_emb // config.num_heads
@@ -382,11 +385,27 @@ class TransformerICL(nn.Module):
         self.cache = {}
         self.use_cache = use_cache
         d_vocab = config.d_vocab
+        self.seq_model = config.seq_model # "Attention" , "LSTM", "Mamba", "RNN", "S4", "LinerAttention"
+        self.d_emb = config.d_emb
 
         self.embedder = embedder
         # self.pos_embed = PosEmbed(n_ctx, d_model)
-        self.atten1 = Attention(d_model, num_heads, d_head, n_ctx)
-        self.atten2 = Attention(d_model, num_heads, d_head, n_ctx)
+        if self.seq_model == "Attention":
+            self.atten_list = nn.ModuleList(
+                [
+                    Attention(d_model, num_heads, d_head, n_ctx) for i in range(self.num_atten_layer)
+                ]
+            )
+        elif self.seq_model == "LSTM":
+            self.rnn = nn.LSTM(self.d_emb, d_model, self.num_atten_layer, batch_first=True)
+        elif self.seq_model == "RNN":
+            self.rnn = nn.RNN(self.d_emb, d_model, self.num_atten_layer, batch_first=True)
+        elif self.seq_model == "Mamba":
+            self.atten_list = nn.ModuleList(
+                [
+                    Mamba(self.d_emb, d_model) for i in range(self.num_atten_layer)
+                ]
+            )
         self.mlp_list = nn.ModuleList(
             [
                 nn.Linear(d_model, d_model) for i in range(self.num_layers)
@@ -401,8 +420,11 @@ class TransformerICL(nn.Module):
 
     def forward(self, x, labels, tasks=None):
         x = self.embedder(x, labels, tasks)
-        x = self.atten1(x) + x
-        x = self.atten2(x) + x
+        if self.seq_model == "RNN" or self.seq_model == "LSTM":
+            x, _ = self.rnn(x)
+        else:
+            for atten in self.atten_list:
+                x = atten(x) + x
         for mlp in self.mlp_list:
             x = mlp(x) 
             x = F.relu(x)
@@ -433,11 +455,9 @@ class TransformerICL(nn.Module):
             if incl_bwd:
                 hp.add_hook(save_hook_back, "bwd")
                 
-    def get_attention_matrix1(self):
-        return self.atten1.get_attention_matrix()
+    def get_attention_matrix(self, layer):
+        return self.atten_list[layer].get_attention_matrix()
     
-    def get_attention_matrix2(self):
-        return self.atten2.get_attention_matrix()
                 
                 
     
@@ -588,7 +608,7 @@ class MultiTaskInputEmbedderV2(nn.Module):
         h_label = h_label.view(B, SS, self._emb_dim) #(B, SS, E)
         
         # task embedding (B, SS) -> (B, 1, E)　一つだけ取ってくる
-        tmp_task = tasks[:, 0]
+        tmp_task = tasks[:, -1]
         task_embs = self.task_embs[tmp_task] # (B, 1, E)
         hh = torch.empty((B, SS * 2 ,  self._emb_dim), dtype=h_example.dtype, device=h_example.device)
         # hh = torch.zeros((B, (SS * 2 ),  h_example.shape[2]), dtype=h_example.dtype, device=h_example.device )

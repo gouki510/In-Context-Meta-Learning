@@ -2,13 +2,15 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class TransformerConfig:
+  num_seq: int = 8
   num_layers: int = 2
+  num_atten_layer: int = 2
   d_vocab: int = 32
   d_model: int = 128
   d_mlp: int = 128
   d_head: int = 128
   num_heads: int = 1
-  n_ctx: int = int((9*2))
+  n_ctx: int = int(((num_seq+1)*2))
   act_type: str = "ReLU"
   use_cache: bool = False
   use_ln: bool = True
@@ -17,6 +19,7 @@ class TransformerConfig:
   num_classes:int = 512
   num_tasks: int = 3
   task_ways: int = 8
+  seq_model: str = "Attention"  
   
 
 @dataclass
@@ -54,6 +57,7 @@ class TrainConfig:
   optimize_step: int = int(2e5)
   lr: float = 0.01
   optimizer: str = "sgd" # adam, sgd, adamw
+  every_eval: int = 3000
 
 @dataclass
 class MainConfig:
@@ -64,4 +68,5 @@ class MainConfig:
   modelconfig: TransformerConfig = TransformerConfig()
   trainconfig: TrainConfig = TrainConfig()
   device: str = "cuda:1"
+  exp_name: str = "some_exp"
 # define config

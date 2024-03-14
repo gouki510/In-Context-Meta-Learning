@@ -3,6 +3,7 @@ from dataclasses import dataclass, asdict
 @dataclass
 class TransformerConfig:
   num_layers: int = 2
+  num_atten_layer: int = 2
   d_vocab: int = 32 # same as num_labels
   d_model: int = 128 
   d_mlp: int = 128
@@ -14,7 +15,8 @@ class TransformerConfig:
   use_ln: bool = True
   p_dim: int = 65
   d_emb: int = 128
-
+  seq_model: str = "Attention" # Attention, LSTM, RNN, Mamba
+  
 @dataclass
 class TrainDataConfig:
   num_classes: int = 512

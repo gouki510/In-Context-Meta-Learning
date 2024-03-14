@@ -8,7 +8,7 @@ from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSampling
 from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbedderV1, MultiTaskInputEmbedderV2
 from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
-from utils import visalize_attention1, visalize_attention2
+from utils import visalize_attention
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -24,7 +24,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config):
-    wandb.init(project="induction-head-multi", config=asdict(config))
+    wandb.init(project="induction-head-multitask", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -88,31 +88,27 @@ def main(config):
         train_acc = cal_acc(data_dict["labels"][:, -1], query_logit)
         wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
         
-        model.eval()
-        with torch.no_grad():
-            logits = model(icl_data_dict["examples"], icl_data_dict["labels"], icl_data_dict["tasks"])
-            query_logit = logits[:,-1,:]
-            icl_acc = cal_acc(icl_data_dict["labels"][:, -1], query_logit)
-            wandb.log({"valid/icl_acc":icl_acc}, step=step)
+        if step % trainconfig.every_eval == 0:
+            model.eval()
+            with torch.no_grad():
+                logits = model(icl_data_dict["examples"], icl_data_dict["labels"], icl_data_dict["tasks"])
+                query_logit = logits[:,-1,:]
+                icl_acc = cal_acc(icl_data_dict["labels"][:, -1], query_logit)
+                wandb.log({"valid/icl_acc":icl_acc}, step=step)
 
-            logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["tasks"])
-            query_logit = logits[:,-1,:]
-            iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
-            wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
+                logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["tasks"])
+                query_logit = logits[:,-1,:]
+                iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
+                wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
 
-            # logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
-            # query_logit = logits[:,-1,:]
-            # icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1, -1], query_logit)
-            # wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
-            attn_img = visalize_attention1(model)
-            wandb.log({"attention1": attn_img}, step=step)
-            plt.close()
-            plt.cla()
-                
-            attn_img = visalize_attention2(model)
-            wandb.log({"attention2": attn_img}, step=step)
-            plt.close()
-            plt.cla()
+                # logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
+                # query_logit = logits[:,-1,:]
+                # icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1, -1], query_logit)
+                # wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
+                for layer_i in range(modelconfig.num_atten_layer):
+                    attn_img = visalize_attention(model, layer_i)
+                    wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
+                del attn_img, iwl_acc, icl_acc
                 
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
@@ -131,6 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_tasks", type=int, default=3)
     parser.add_argument("--num_layer", type=int, default=2)
     parser.add_argument("--d_model", type=int, default=128)
+    parser.add_argument("--exp_name", type=str, default="some_exp")
+    parser.add_argument("--num_seq", type=int, default=8)
     
     config = MainConfig()
     
@@ -165,6 +163,13 @@ if __name__ == "__main__":
     config.iwldataconfig.num_tasks = parser.parse_args().num_tasks
     config.icl2dataconfig.num_tasks = parser.parse_args().num_tasks
     config.modelconfig.num_tasks = parser.parse_args().num_tasks
+    
+    config.traindataconfig.num_seq = parser.parse_args().num_seq
+    config.icldataconfig.num_seq = parser.parse_args().num_seq
+    config.iwldataconfig.num_seq = parser.parse_args().num_seq
+    config.modelconfig.num_seq = parser.parse_args().num_seq
+    
+    config.modelconfig.n_ctx = (config.modelconfig.num_seq+1)*2
     
     config.modelconfig.num_layers = parser.parse_args().num_layer
     config.modelconfig.d_model = parser.parse_args().d_model

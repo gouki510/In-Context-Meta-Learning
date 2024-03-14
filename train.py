@@ -7,7 +7,7 @@ from dataclasses import dataclass, asdict
 from data import SamplingLoader, IterDataset, SamplingDataset
 from model import InputEmbedder, Transformer, TransformerICL
 from config import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
-from utils import visalize_attention1, visalize_attention2
+from utils import visalize_attention
 from argparse import ArgumentParser
 import numpy as np
 import matplotlib.pyplot as plt
@@ -106,17 +106,12 @@ def main(config):
                 icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1], query_logit)
                 wandb.log({"valid/icl2_acc":icl2_acc.cpu()}, step=step)
                 
-                attn_img = visalize_attention1(model)
-                wandb.log({"attention1": attn_img}, step=step)
-                plt.close()
-                plt.cla()
-                
-                attn_img = visalize_attention2(model)
-                wandb.log({"attention2": attn_img}, step=step)
-                plt.close()
-                plt.cla()
+                if modelconfig.seq_model == "Attention":
+                    for layer_i in range(modelconfig.num_atten_layer):
+                        attn_img = visalize_attention(model, layer_i)
+                        wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
             
-            del attn_img, icl2_acc, iwl_acc, icl_acc
+                    del attn_img, icl2_acc, iwl_acc, icl_acc
                 
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
@@ -137,10 +132,12 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=0)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--p_bursty", type=float, default=1)
-    parser.add_argument("--p_icl", type=float, default=1)
+    parser.add_argument("--p_icl", type=float, default=0)
     parser.add_argument("--exp_name", type=str, default="some_exp")
     parser.add_argument("--num_layer", type=int, default=2)
     parser.add_argument("--d_model", type=int, default=128)
+    parser.add_argument("--num_atten_layer", type=int, default=2)
+    parser.add_argument("--seq_model", type=str, default="Attention")
     
     config = MainConfig()
     
@@ -176,6 +173,10 @@ if __name__ == "__main__":
     config.icl2dataconfig.p_icl = parser.parse_args().p_icl
     
     config.modelconfig.num_layers = parser.parse_args().num_layer
+    
+    config.modelconfig.num_atten_layer = parser.parse_args().num_atten_layer
+    
+    config.modelconfig.seq_model = parser.parse_args().seq_model
     
     config.modelconfig.d_model = parser.parse_args().d_model
     
