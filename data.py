@@ -226,9 +226,6 @@ class IterDataset(IterableDataset):
     def __iter__(self):
         return self.generator()
 
-
-
- 
     
 class MultiTaskSamplingLoader(DataLoader):
 
@@ -262,7 +259,6 @@ class MultiTaskSamplingLoader(DataLoader):
           num_few_shot_task = self.num_seq//self.task_ways
           few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False)
           tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
-          # print(tasks.shape)
           
           # choise few shot items
           num_few_shot_class = self.num_seq//self.item_ways
@@ -290,7 +286,8 @@ class MultiTaskSamplingLoader(DataLoader):
           labels = (labels + tasks) % self.num_labels
           
           # select query labels
-          query_class = np.random.choice(few_shot_class, 1)
+          # query_class = np.random.choice(few_shot_class, 1)
+          query_class = np.random.choice(self.num_classes, 1)
           query_task = np.random.choice(few_shot_task, 1)
           query_label = (self.labels[query_class] + query_task) % self.num_labels
           query_mu = self.mu[query_class]
@@ -324,7 +321,6 @@ class MultiTaskSamplingLoader(DataLoader):
           labels = (labels + tasks) % self.num_labels
           classes = classes[ordering]
           tasks = tasks[ordering]
-          
 
           yield {
               "tasks":tasks,
@@ -405,7 +401,8 @@ class MultiTaskSamplingLoader(DataLoader):
         labels = (labels + tasks) % self.num_labels
         
         # select query labels
-        query_class = np.random.choice(few_shot_class, 1)
+        # query_class = np.random.choice(few_shot_class, 1)
+        query_class = np.random.choice(self.num_classes, 1)
         query_task = np.random.choice(few_shot_task, 1)
         query_label = (self.labels[query_class] + query_task) % self.num_labels
         query_mu = self.mu[query_class]
@@ -415,8 +412,6 @@ class MultiTaskSamplingLoader(DataLoader):
         labels = torch.cat([labels.flatten(), query_label.flatten()])
         tasks = torch.cat([torch.tensor(tasks).flatten(), torch.tensor(false_tasks).flatten()])
           
-        
-        
         yield {
             "tasks":tasks,
             "examples":x.to(torch.float32),
