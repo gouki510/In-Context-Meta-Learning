@@ -56,7 +56,7 @@ class ICL2DataConfig(TrainDataConfig):
 @dataclass
 class TrainConfig:
   batch_size: int = 128
-  optimize_step: int = int(2e5)
+  optimize_step: int = int(4e5)
   lr: float = 0.01
   optimizer: str = "sgd" # adam, sgd, adamw
   every_eval: int = 3000

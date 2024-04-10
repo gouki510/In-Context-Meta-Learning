@@ -1,1 +1,0 @@
-{"train/acc": 0.2890625, "train/loss": 2.1095094680786133, "_timestamp": 1711989532.6478841, "valid/icl_acc": 0.265625, "valid/iwl_acc": 0.0703125, "valid/icl2_acc": 0.3046875, "_runtime": 500.8053731918335, "_step": 14502}

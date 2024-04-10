@@ -50,7 +50,7 @@ class TrainConfig:
   optimize_step: int = int(2e5)
   lr: float = 0.01
   optimizer: str = "sgd" # adam, sgd, adamw
-  every_eval: int = 3000
+  every_eval: int = 200
 
 @dataclass
 class MainConfig:

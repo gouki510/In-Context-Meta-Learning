@@ -222,9 +222,15 @@ class IterDataset(IterableDataset):
     def __init__(self, generator):
         self.generator = generator
 
-
     def __iter__(self):
         return self.generator()
+      
+class IterDatasetFortask(IterableDataset):
+    def __init__(self, generator):
+        self.generator = generator
+    def __iter__(self):
+        return self.generator()
+
 
     
 class MultiTaskSamplingLoader(DataLoader):
@@ -250,6 +256,10 @@ class MultiTaskSamplingLoader(DataLoader):
       self.p_bursty = 0
     prob = np.array([1/((k+1)**self.alpha) for k in range(self.num_classes)])
     self.prob = prob/prob.sum()
+    task_prob = np.array([1/((k+1)**self.alpha) for k in range(self.num_task)])
+    self.task_prob = task_prob/task_prob.sum()
+    # task_vector
+    self.task_for_task_vector = np.random.choice(self.num_task, self.num_seq, p=self.task_prob)
 
   def get_seq(self):
     while True:
@@ -257,7 +267,7 @@ class MultiTaskSamplingLoader(DataLoader):
         if self.p_bursty > np.random.rand():
           # choise few shot tasks
           num_few_shot_task = self.num_seq//self.task_ways
-          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False)
+          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False, p=self.task_prob)
           tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
           
           # choise few shot items
@@ -307,7 +317,7 @@ class MultiTaskSamplingLoader(DataLoader):
         else:
           # rank frequency
           num_few_shot_task = self.num_seq//self.task_ways
-          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False)
+          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False, p=self.task_prob)
           tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
           
           classes = np.random.choice(self.num_classes, self.num_seq+1, p=self.prob)
@@ -330,9 +340,10 @@ class MultiTaskSamplingLoader(DataLoader):
           }
 
       elif self.data_type == "no_support":
-          num_few_shot_task = self.num_seq//self.task_ways
-          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False)
-          tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
+          num_few_shot_task = self.num_seq #//self.task_ways
+          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, p=self.task_prob)
+          tasks = few_shot_task
+          # tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
         
           # rank frequency
           classes = np.random.choice(self.num_classes, self.num_seq, p=self.prob)
@@ -360,18 +371,65 @@ class MultiTaskSamplingLoader(DataLoader):
           labels = torch.cat([torch.from_numpy(labels).flatten(), query_label.flatten()])
           tasks = torch.cat([torch.tensor(tasks).flatten(), torch.tensor(query_task).flatten()])
           classes = np.concatenate([classes, query_class])
-
+          
+          # task vector example
+          # choise few shot tasks
+          tasks_for_task_vector = np.repeat(query_task, self.task_ways, axis=0).reshape(-1,1)
+          
+          # choise few shot items
+          num_few_shot_class = self.num_seq//self.item_ways
+          few_shot_class = np.random.choice(self.num_classes, num_few_shot_class, replace=False)
+          mus = self.mu[few_shot_class]
+          mus = np.repeat(mus, self.item_ways, axis=0) # expand ways
+          
+          # choice few shot labels
+          labels_for_task_vector  = self.labels[few_shot_class]
+          labels_for_task_vector  = np.repeat(labels_for_task_vector , self.item_ways, axis=0) # expand ways
+        
+          
+          # classes 
+          classes_for_task_vector  = np.repeat(few_shot_class, self.item_ways)
+          # add noise
+          x_for_task_vector = self.add_noise(mus)
+          # permutation shuffle
+          ordering = np.random.permutation(self.num_seq)
+          x_for_task_vector = x_for_task_vector[ordering]
+          labels_for_task_vector  = labels_for_task_vector[ordering]
+          classes_for_task_vector = classes_for_task_vector[ordering]
+          task_ordering = np.random.permutation(self.num_seq)
+          tasks_for_task_vector = tasks_for_task_vector[task_ordering]
+          
+          labels_for_task_vector = (labels_for_task_vector  + tasks_for_task_vector) % self.num_labels
+          
+          # select query labels
+          # query_class = np.random.choice(few_shot_class, 1)
+          query_class = np.random.choice(self.num_classes, 1)
+          # query_task = np.random.choice(few_shot_task, 1)
+          query_label = (self.labels[query_class] + query_task) % self.num_labels
+          query_mu = self.mu[query_class]
+          query_x = self.add_noise(query_mu)
+          # concat
+          x_for_task_vector = torch.cat([x_for_task_vector, query_x])
+          labels_for_task_vector = torch.cat([labels_for_task_vector.flatten(), query_label.flatten()])
+          tasks_for_task_vector = torch.cat([torch.tensor(tasks_for_task_vector).flatten(), torch.tensor(query_task).flatten()])
+      
           yield {
               "tasks": tasks,
               "examples":x.to(torch.float32),
               "labels":labels.flatten(),
-              "classes" : torch.from_numpy(classes)
+              "classes" : torch.from_numpy(classes),
+              "task_vector" : {
+                  "tasks":tasks_for_task_vector,
+                  "examples":x_for_task_vector.to(torch.float32),
+                  "labels":labels_for_task_vector,
+                  "classes" : torch.cat([torch.from_numpy(classes_for_task_vector).flatten(), torch.from_numpy(query_class).flatten()])
+              }
           }
           
       elif self.data_type == "holdout":
         # choise few shot tasks
         num_few_shot_task = self.num_seq//self.task_ways
-        few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False)
+        few_shot_task = np.random.choice(self.num_task, num_few_shot_task,)
         tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
         false_tasks = np.random.choice(self.num_task, 1, replace=False)
         # print(tasks.shape)
@@ -449,7 +507,58 @@ class MultiTaskSamplingLoader(DataLoader):
             "labels":labels,
             "classes" : torch.cat([torch.from_numpy(classes).flatten(), torch.from_numpy(query_class).flatten()])
         }
-    
+        
+  def get_seq_for_task_vector(self):
+      while True:
+        # choise few shot tasks
+        # num_few_shot_task = self.num_seq//self.task_ways
+        # few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False, p=self.task_prob)
+        print(self.task_for_task_vector.shape)
+        tasks = self.task_for_task_vector
+        tasks = np.repeat(tasks, self.task_ways, axis=0).reshape(-1,1)
+        
+        # choise few shot items
+        num_few_shot_class = self.num_seq//self.item_ways
+        few_shot_class = np.random.choice(self.num_classes, num_few_shot_class, replace=False)
+        mus = self.mu[few_shot_class]
+        mus = np.repeat(mus, self.item_ways, axis=0) # expand ways
+        
+        # choice few shot labels
+        labels = self.labels[few_shot_class]
+        labels = np.repeat(labels, self.item_ways, axis=0) # expand ways
+      
+        # classes 
+        classes = np.repeat(few_shot_class, self.item_ways)
+        # add noise
+        x = self.add_noise(mus)
+        # permutation shuffle
+        ordering = np.random.permutation(self.num_seq)
+        x = x[ordering]
+        labels = labels[ordering]
+        classes = classes[ordering]
+        task_ordering = np.random.permutation(self.num_seq)
+        tasks = tasks[task_ordering]
+        
+        labels = (labels + tasks) % self.num_labels
+        
+        # select query labels
+        # query_class = np.random.choice(few_shot_class, 1)
+        query_class = np.random.choice(self.num_classes, 1)
+        query_task = np.random.choice(tasks, 1)
+        query_label = (self.labels[query_class] + query_task) % self.num_labels
+        query_mu = self.mu[query_class]
+        query_x = self.add_noise(query_mu)
+        # concat
+        x = torch.cat([x, query_x])
+        labels = torch.cat([labels.flatten(), query_label.flatten()])
+        tasks = torch.cat([torch.tensor(tasks).flatten(), torch.tensor(query_task).flatten()])
+        
+        yield {
+            "tasks":tasks,
+            "examples":x.to(torch.float32),
+            "labels":labels,
+            "classes" : torch.cat([torch.from_numpy(classes).flatten(), torch.from_numpy(query_class).flatten()])
+        }
   
 
   def add_noise(self, x):

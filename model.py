@@ -566,7 +566,20 @@ class TransformerICL(nn.Module):
             x = F.relu(x)
         x = self.classifier(x)
         return x
-
+    
+    def injection(self, x, labels, tasks=None, task_hidden=None):
+        x = self.embedder(x, labels, tasks)
+        if self.seq_model == "RNN" or self.seq_model == "LSTM":
+            x, _ = self.rnn(x)
+        else:
+            for atten in self.atten_list:
+                x = atten(x) + x
+        for mlp in self.mlp_list:
+            x = mlp(x) 
+            x = F.relu(x)
+        x = self.classifier(x)
+        return x
+    
     def set_use_cache(self, use_cache):
         self.use_cache = use_cache
 
