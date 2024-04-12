@@ -10,7 +10,7 @@ sys.path.append("/workspace/induction-head")
 from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSamplingLoader, IterDatasetFortask
 from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbedderV1, MultiTaskInputEmbedderV3
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
-from configs.config_multi3 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
+from configs.config_multi2 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
 from utils import visalize_attention
 import matplotlib.pyplot as plt
@@ -35,49 +35,63 @@ class TaskVector:
         # 特徴マップを取るためのregister_forward_hookを設定
         self.feature_handle = target_layer.register_forward_hook(self.feature)
         # 勾配を取るためのregister_forward_hookを設定
-        self.grad_handle = target_layer.register_forward_hook(self.gradient)
+        # self.grad_handle = target_layer.register_forward_hook(self.gradient)
 
     # self.feature_handleの定義時に呼び出されるメソッド
     ## モデルの指定されたレイヤーの出力（特徴マップ）を保存する
     def feature(self, model, input, output):
-         activation = output
-         self.layer_output.append(activation.to("cpu").detach())
+         activation = output.clone()
+         self.layer_output.append(activation.detach())
 
     # self.grad_handleの定義時に呼び出されるメソッド
     ## モデルの指定されたレイヤーの勾配を保存する
     ## 勾配が存在しない場合や勾配が必要ない場合は処理をスキップ
-    def gradient(self, model, input, output):
-        # 勾配が無いとき
-        if not hasattr(output, "requires_grad") or not output.requires_grad:
-            return # ここでメソッド終了
+    # def gradient(self, model, input, output):
+    #     # 勾配が無いとき
+    #     if not hasattr(output, "requires_grad") or not output.requires_grad:
+    #         return # ここでメソッド終了
 
-        # 勾配を取得
-        def _hook(grad): 
-            # gradが定義されていないが、勾配が計算されると各テンソルのgrad属性に保存されるっぽい（詳細未確認）
-            self.layer_grad.append(grad.to("cpu").detach())
+    #     # 勾配を取得
+    #     def _hook(grad): 
+    #         # gradが定義されていないが、勾配が計算されると各テンソルのgrad属性に保存されるっぽい（詳細未確認）
+    #         self.layer_grad.append(grad.to("cpu").detach())
 
-        # PyTorchのregister_hookメソッド（https://pytorch.org/docs/stable/generated/torch.Tensor.register_hook.html）
-        output.register_hook(_hook) 
+    #     # PyTorchのregister_hookメソッド（https://pytorch.org/docs/stable/generated/torch.Tensor.register_hook.html）
+    #     output.register_hook(_hook) 
 
     # メモリの解放を行うメソッド、フックを解除してメモリを解放する
     def release(self):
         self.feature_handle.remove()
-        self.grad_handle.remove()
+        # self.grad_handle.remove()
 
 # モデルの指定されたレイヤーの出力と勾配を保存するクラス
 class TaskVectorInjection:
     def __init__(self, model, target_layer, injection):  # 引数：モデル, 対象のレイヤー
         self.model = model
         self.target_layer = target_layer
-        self.injection = injection
+        self.hidden_to_injection = injection
         
-        self.feature_handle = target_layer.register_forward_hook(self.feature)
+        # self.feature_handle = target_layer.register_forward_hook(self.injection)
         
-    
-    def feature(self, model, input, output):
-        output[:,-1] = self.injection[:,-1]
-        return output
-        
+        self._hooks = []
+
+    def __enter__(self):
+        self._register_forward_hooks()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        for hook in self._hooks:
+            hook.remove()
+
+    def _register_forward_hooks(self):
+        def inject_hidden(mod, inp, out):
+            hidden_states = out[0] if isinstance(out, tuple) else out
+
+            # hidden_states[:, -1] = self.hidden_to_injection[:,-1]
+            hidden_states = torch.zeros_like(self.hidden_to_injection).to(hidden_states.device)
+
+            return out
+
+        self.target_layer.register_forward_hook(inject_hidden)
 
 
 def main(config, save_dir):
@@ -168,7 +182,7 @@ def main(config, save_dir):
                 iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
                 wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
                 
-                
+                # task vector
                 test_data_dict = iwl_data_dict["task_vector"]   
                 test_data_dict = to_gpu_dict(test_data_dict, device=config.device)
                 # embedder.Emb
@@ -179,24 +193,31 @@ def main(config, save_dir):
                 # mlp_list.0
                 # mlp_list.1
                 # classifier
-                emb = TaskVector(model, model.embedder.Emb)
-                atten0 = TaskVector(model, model.atten_list[0])
-                atten1 = TaskVector(model, model.atten_list[1])
-                mlp0 = TaskVector(model, model.mlp_list[0])
-                mlp1 = TaskVector(model, model.mlp_list[1])
-                classifier = TaskVector(model, model.classifier)
+                if config.target_layer == "emb":
+                    task_vector = TaskVector(model, model.embedder.Emb)
+                elif config.target_layer == "atten0":
+                    task_vector = TaskVector(model, model.atten_list[0])
+                elif config.target_layer == "atten1":
+                    task_vector = TaskVector(model, model.atten_list[1])
+                elif config.target_layer == "mlp0":
+                    task_vector = TaskVector(model, model.mlp_list[0])
+                elif config.target_layer == "mlp1":
+                    task_vector = TaskVector(model, model.mlp_list[1])
+                elif config.target_layer == "classifier":   
+                    task_vector = TaskVector(model, model.classifier)
                 logits = model(test_data_dict["examples"], test_data_dict["labels"], test_data_dict["tasks"])
                 query_logit = logits[:,-1,:]
                 icl_acc = cal_acc(test_data_dict["labels"][:, -1], query_logit)
                 wandb.log({"valid/test_icl_acc":icl_acc}, step=step)
                 
-                target_layer = model.atten_list[0]
-                injection = atten0.layer_output[0]
-                taskinjection = TaskVectorInjection(model, target_layer, injection)
-                logits = model(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["tasks"])
+                injection = task_vector.layer_output[0]
+                # taskinjection = TaskVectorInjection(model, target_layer, injection)
+                # with taskinjection:
+                logits = model.injection(iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["tasks"], task_hidden=injection, targer_layer=config.target_layer)
                 query_logit = logits[:,-1,:]
                 icl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
                 wandb.log({"valid/task_vector_icl_acc":icl_acc}, step=step)
+                task_vector.release()
                 # logit : [batch, layer, seq_len, num_class]
                 # logits = model.injection(task_hideen, iwl_data_dict["examples"], iwl_data_dict["labels"] , iwl_data_dict["tasks"])
                 # logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
@@ -207,13 +228,12 @@ def main(config, save_dir):
                     attn_img = visalize_attention(model, layer_i)
                     wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
                     plt.close()
-                del attn_img, iwl_acc, icl_acc
-                
+            del attn_img, iwl_acc, icl_acc
+            os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
+            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name, str(step)+".pt"))
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
         if step > trainconfig.optimize_step:
-            os.makedirs(save_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name+".pt"))
             break
         
         
@@ -236,6 +256,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="output")
     parser.add_argument("--use_standard_transformer", action="store_true")
     parser.add_argument("--num_atten_layer", type=int, default=2)
+    parser.add_argument("--target_layer", type=str, default="atten0")
     
     config = MainConfig()
     
@@ -297,6 +318,7 @@ if __name__ == "__main__":
     
     save_dir = parser.parse_args().save_dir
     
+    config.target_layer = parser.parse_args().target_layer
     
     
     main(config, save_dir)

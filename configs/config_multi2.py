@@ -59,7 +59,7 @@ class TrainConfig:
   optimize_step: int = int(4e5)
   lr: float = 0.01
   optimizer: str = "sgd" # adam, sgd, adamw
-  every_eval: int = 3000
+  every_eval: int = 1000
 
 @dataclass
 class MainConfig:
@@ -69,6 +69,6 @@ class MainConfig:
   icl2dataconfig: ICL2DataConfig = ICL2DataConfig()
   modelconfig: TransformerConfig = TransformerConfig()
   trainconfig: TrainConfig = TrainConfig()
-  device: str = "cuda:1"
+  device: str = "cuda:0"
   exp_name: str = "some_exp"
 # define config

@@ -567,17 +567,30 @@ class TransformerICL(nn.Module):
         x = self.classifier(x)
         return x
     
-    def injection(self, x, labels, tasks=None, task_hidden=None):
+    def injection(self, x, labels, tasks=None, task_hidden=None, targer_layer=None):
         x = self.embedder(x, labels, tasks)
+        if targer_layer == "emb":
+            x[:, -1] = task_hidden[:,-1]
         if self.seq_model == "RNN" or self.seq_model == "LSTM":
             x, _ = self.rnn(x)
         else:
-            for atten in self.atten_list:
-                x = atten(x) + x
-        for mlp in self.mlp_list:
+            for i, atten in enumerate(self.atten_list):
+                atten_output = atten(x) 
+                if i == 0 and targer_layer == "atten0":
+                    atten_output[:,-1] = task_hidden[:,-1]
+                elif i == 1 and targer_layer == "atten1":
+                    atten_output[:,-1] = task_hidden[:,-1]
+                x = atten_output + x
+        for i, mlp in enumerate(self.mlp_list):
             x = mlp(x) 
             x = F.relu(x)
+            if i == 0 and targer_layer == "mlp0":
+                x[:,-1] = task_hidden[:,-1]
+            elif i == 1 and targer_layer == "mlp1":
+                x[:,-1] = task_hidden[:,-1]
         x = self.classifier(x)
+        if targer_layer == "classifier":
+            x[:,-1] = task_hidden[:,-1]
         return x
     
     def set_use_cache(self, use_cache):
