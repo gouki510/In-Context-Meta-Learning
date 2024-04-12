@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import einops
-from mamba_ssm import Mamba
+# from mamba_ssm import Mamba
 from einops import rearrange, repeat, einsum
 
 
@@ -530,12 +530,12 @@ class TransformerICL(nn.Module):
             self.rnn = nn.LSTM(self.d_emb, d_model, self.num_atten_layer, batch_first=True)
         elif self.seq_model == "RNN":
             self.rnn = nn.RNN(self.d_emb, d_model, self.num_atten_layer, batch_first=True)
-        elif self.seq_model == "Mamba":
-            self.atten_list = nn.ModuleList(
-                [
-                    Mamba(self.d_emb, d_model) for i in range(self.num_atten_layer)
-                ]
-            )
+        # elif self.seq_model == "Mamba":
+        #     self.atten_list = nn.ModuleList(
+        #         [
+        #             Mamba(self.d_emb, d_model) for i in range(self.num_atten_layer)
+        #         ]
+        #     )
         elif self.seq_model == "S6":
             self.atten_list = nn.ModuleList(
                 [

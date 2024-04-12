@@ -6,7 +6,7 @@ from torch import nn
 from dataclasses import dataclass, asdict
 import os
 import sys
-sys.path.append("/workspace/induction-head")
+sys.path.append("/workspace/")
 from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSamplingLoader, IterDatasetFortask
 from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbedderV1, MultiTaskInputEmbedderV3
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
@@ -317,6 +317,7 @@ if __name__ == "__main__":
     config.device = parser.parse_args().device
     
     save_dir = parser.parse_args().save_dir
+    config.exp_name = parser.parse_args().exp_name
     
     config.target_layer = parser.parse_args().target_layer
     
