@@ -1,0 +1,5 @@
+# python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:0 --p_bursty 1 --num_seq 8 --use_standard_transformer
+# python train/train_multi3.py --ways 1 --num_class 32 --eps 0.1 --device cuda:1 --p_bursty 1 --num_seq 8 --use_standard_transformer --num_layer 2 --lr 0.001 --num_atten_layer 2
+python train/train_multi3.py --ways 1 --num_class 128 --eps 0.1 --device cuda:1 --p_bursty 1 --num_seq 8 --use_standard_transformer --num_layer 3 --lr 0.001 --num_atten_layer 3
+# python train/train_multi3.py --ways 1 --num_class 256 --eps 0.1 --device cuda:1 --p_bursty 1 --num_seq 8 --use_standard_transformer --num_layer 4 --lr 0.001 --num_atten_layer 4
+python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:1 --p_bursty 1 --num_seq 8 --use_standard_transformer --num_layer 5 --lr 0.001 --num_atten_layer 5

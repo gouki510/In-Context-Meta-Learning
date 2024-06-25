@@ -12,7 +12,7 @@ from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbe
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from configs.config_multi2 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
-from utils import visalize_attention
+from utils import visalize_attention, example_label_extract_attention
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -29,9 +29,9 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 def main(config, save_dir):
     if config.modelconfig.use_standard_transformer:
-        wandb.init(project="induction-head-multitask3-standard", config=asdict(config))
+        wandb.init(project="202406_induction-head-multitask3-standard", config=asdict(config))
     else:
-        wandb.init(project="induction-head-multitask3-v2", config=asdict(config))
+        wandb.init(project="202406_induction-head-multitask3-v2", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -118,13 +118,18 @@ def main(config, save_dir):
                 for layer_i in range(modelconfig.num_atten_layer):
                     attn_img = visalize_attention(model, layer_i)
                     wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
+                    atten_log = example_label_extract_attention(model, layer_i, n_ctx=modelconfig.n_ctx)
+                    wandb.log(atten_log)
                 del attn_img, iwl_acc, icl_acc
+                
+            os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
+            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name, config.exp_name+"_"+str(step)+".pt"))
                 
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
         if step > trainconfig.optimize_step:
-            os.makedirs(save_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name+".pt"))
+            os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
+            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name, config.exp_name+".pt"))
             break
 
 if __name__ == "__main__":
@@ -145,6 +150,8 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="output")
     parser.add_argument("--use_standard_transformer", action="store_true")
     parser.add_argument("--num_atten_layer", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument("--optimize_step", type=int, default=int(4e5))
     
     config = MainConfig()
     
@@ -203,8 +210,13 @@ if __name__ == "__main__":
     config.modelconfig.num_atten_layer = parser.parse_args().num_atten_layer
     
     config.device = parser.parse_args().device
+    config.trainconfig.lr = parser.parse_args().lr
+    config.trainconfig.optimize_step = parser.parse_args().optimize_step
+    
+    config.exp_name = f"{config.exp_name}_cls{config.traindataconfig.num_classes}_seq{config.traindataconfig.num_seq}_nt{config.traindataconfig.num_tasks}_nal{config.modelconfig.num_atten_layer}"
     
     save_dir = parser.parse_args().save_dir
+
     
     
     

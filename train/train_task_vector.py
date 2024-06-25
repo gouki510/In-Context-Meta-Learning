@@ -6,13 +6,13 @@ from torch import nn
 from dataclasses import dataclass, asdict
 import os
 import sys
-sys.path.append("/workspace/")
+sys.path.append("/workspace/induction-head")
 from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSamplingLoader, IterDatasetFortask
 from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbedderV1, MultiTaskInputEmbedderV3
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from configs.config_multi2 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
-from utils import visalize_attention
+from utils import visalize_attention, cal_entropy_attention
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -95,7 +95,7 @@ class TaskVectorInjection:
 
 
 def main(config, save_dir):
-    wandb.init(project="induction-head-task-vector", config=asdict(config))
+    wandb.init(project="induction-head-task-vector-entropy", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -195,16 +195,14 @@ def main(config, save_dir):
                 # classifier
                 if config.target_layer == "emb":
                     task_vector = TaskVector(model, model.embedder.Emb)
-                elif config.target_layer == "atten0":
-                    task_vector = TaskVector(model, model.atten_list[0])
-                elif config.target_layer == "atten1":
-                    task_vector = TaskVector(model, model.atten_list[1])
-                elif config.target_layer == "mlp0":
-                    task_vector = TaskVector(model, model.mlp_list[0])
-                elif config.target_layer == "mlp1":
-                    task_vector = TaskVector(model, model.mlp_list[1])
-                elif config.target_layer == "classifier":   
-                    task_vector = TaskVector(model, model.classifier)
+                for atten_i in range(modelconfig.num_atten_layer):
+                    if config.target_layer == f"atten{atten_i}":
+                        task_vector = TaskVector(model, model.atten_list[atten_i])
+                for mlp_i in range(modelconfig.num_layers):
+                    if config.target_layer == f"mlp{mlp_i}":
+                        task_vector = TaskVector(model, model.mlp_list[mlp_i])
+                    elif config.target_layer == "classifier":   
+                        task_vector = TaskVector(model, model.classifier)
                 logits = model(test_data_dict["examples"], test_data_dict["labels"], test_data_dict["tasks"])
                 query_logit = logits[:,-1,:]
                 icl_acc = cal_acc(test_data_dict["labels"][:, -1], query_logit)
@@ -228,6 +226,9 @@ def main(config, save_dir):
                     attn_img = visalize_attention(model, layer_i)
                     wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
                     plt.close()
+                    atten_entropy = cal_entropy_attention(model, layer_i)
+                    wandb.log({"attention_entropy/layer_{}".format(layer_i):atten_entropy}, step=step)
+                    
             del attn_img, iwl_acc, icl_acc
             os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
             torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name, str(step)+".pt"))

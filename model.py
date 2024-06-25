@@ -828,15 +828,15 @@ class MultiTaskInputEmbedderV3(nn.Module):
         """_summary_
 
         Args:
-            examples (_type_): _description_
-            labels (_type_): _description_
-            tasks (_type_): _description_
-            is_training (bool): _description_
+            examples (_type_): example is composed of [example1, example2, example3, ...]
+            labels (_type_): labels is composed of [label1, label2, label3, ...]
+            tasks (_type_): tasks is composed of [task1, task2, task3, ...]
 
         Returns:
-            _type_: _description_
+            hh (_type_): hh is composed of [example1, label1, example2, label2, ..., exampleN]
         """
         # Encode the example inputs into shape (B, SS, E)
+        ## example is composed of [example1, example2, example3, ...]
         B, SS, D = examples.shape
         examples = examples.view(B, SS, D)
         # pos encoding
@@ -855,6 +855,7 @@ class MultiTaskInputEmbedderV3(nn.Module):
         # hh[:, 0, :] = task_embs
         hh[:, 0::2] = h_example
         hh[:, 1::2] = h_label[:, :-1]
+        # hh is composed of [example1, label1, example2, label2, ..., exampleN]
 
         # last label remove
         # hh = hh[:, :-1]

@@ -280,7 +280,6 @@ class MultiTaskSamplingLoader(DataLoader):
           labels = self.labels[few_shot_class]
           labels = np.repeat(labels, self.item_ways, axis=0) # expand ways
         
-          
           # classes 
           classes = np.repeat(few_shot_class, self.item_ways)
           # add noise
@@ -313,8 +312,58 @@ class MultiTaskSamplingLoader(DataLoader):
               "labels":labels,
               "classes" : torch.cat([torch.from_numpy(classes).flatten(), torch.from_numpy(query_class).flatten()])
           }
-          
+        
         else:
+          # rank frequency
+          num_few_shot_task = self.num_seq//self.task_ways
+          few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False, p=self.task_prob)
+          tasks = np.repeat(few_shot_task, self.task_ways, axis=0).reshape(-1,1)
+          
+          # choise few shot items
+          num_few_shot_class = self.num_seq//self.item_ways
+          few_shot_class = np.random.choice(self.num_classes, num_few_shot_class, replace=False)
+          mus = self.mu[few_shot_class]
+          mus = np.repeat(mus, self.item_ways, axis=0) # expand ways
+          
+          # choice few shot labels
+          labels = self.labels[few_shot_class]
+          labels = np.repeat(labels, self.item_ways, axis=0) # expand ways
+        
+          # classes 
+          classes = np.repeat(few_shot_class, self.item_ways)
+          # add noise
+          x = self.add_noise(mus)
+          # permutation shuffle
+          ordering = np.random.permutation(self.num_seq)
+          x = x[ordering]
+          labels = labels[ordering]
+          classes = classes[ordering]
+          task_ordering = np.random.permutation(self.num_seq)
+          tasks = tasks[task_ordering]
+          
+          labels = (labels + tasks) % self.num_labels
+          
+          # select query labels
+          # query_class = np.random.choice(few_shot_class, 1)
+          query_class = np.random.choice(classes, 1)
+          query_task = np.random.choice(few_shot_task, 1)
+          query_label = (self.labels[query_class] + query_task) % self.num_labels
+          query_mu = self.mu[query_class]
+          query_x = self.add_noise(query_mu)
+          # concat
+          x = torch.cat([x, query_x])
+          labels = torch.cat([labels.flatten(), query_label.flatten()])
+          tasks = torch.cat([torch.tensor(tasks).flatten(), torch.tensor(query_task).flatten()])
+          
+          yield {
+              "tasks":tasks,
+              "examples":x.to(torch.float32),
+              "labels":labels,
+              "classes" : torch.cat([torch.from_numpy(classes).flatten(), torch.from_numpy(query_class).flatten()])
+          }
+          
+          
+        """else:
           # rank frequency
           num_few_shot_task = self.num_seq//self.task_ways
           few_shot_task = np.random.choice(self.num_task, num_few_shot_task, replace=False, p=self.task_prob)
@@ -337,7 +386,7 @@ class MultiTaskSamplingLoader(DataLoader):
               "examples":x.to(torch.float32),
               "labels":labels.flatten(),
               "classes" : torch.from_numpy(classes)
-          }
+          }"""
 
       elif self.data_type == "no_support":
           num_few_shot_task = self.num_seq #//self.task_ways
@@ -418,12 +467,12 @@ class MultiTaskSamplingLoader(DataLoader):
               "examples":x.to(torch.float32),
               "labels":labels.flatten(),
               "classes" : torch.from_numpy(classes),
-              "task_vector" : {
-                  "tasks":tasks_for_task_vector,
-                  "examples":x_for_task_vector.to(torch.float32),
-                  "labels":labels_for_task_vector,
-                  "classes" : torch.cat([torch.from_numpy(classes_for_task_vector).flatten(), torch.from_numpy(query_class).flatten()])
-              }
+              # "task_vector" : {
+              #     "tasks":tasks_for_task_vector,
+              #     "examples":x_for_task_vector.to(torch.float32),
+              #     "labels":labels_for_task_vector,
+              #     "classes" : torch.cat([torch.from_numpy(classes_for_task_vector).flatten(), torch.from_numpy(query_class).flatten()])
+              # }
           }
           
       elif self.data_type == "holdout":
