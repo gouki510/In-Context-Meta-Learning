@@ -23,15 +23,12 @@ def cal_acc(t,p):
     p_arg = torch.argmax(p,dim=1)
     return torch.sum(t == p_arg) / p.shape[0]
 def to_gpu_dict(dic, device="cuda:0"):
-    dic = {k:v.to(device) for k,v in dic.items()}
+    dic = {k:v.to(device) if isinstance(v, torch.Tensor) else v for k,v in dic.items()}
     return dic
 
 
 def main(config, save_dir):
-    if config.modelconfig.use_standard_transformer:
-        wandb.init(project="induction-head-multitask3-standard", config=asdict(config))
-    else:
-        wandb.init(project="induction-head-multitask3-v2", config=asdict(config))
+    wandb.init(project="multi-task-induction-head", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -118,13 +115,12 @@ def main(config, save_dir):
                 for layer_i in range(modelconfig.num_atten_layer):
                     attn_img = visalize_attention(model, layer_i)
                     wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
-                del attn_img, iwl_acc, icl_acc
-                
+            del attn_img, iwl_acc, icl_acc
+            os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
+            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name , str(step)+".pt"))
         print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
         if step > trainconfig.optimize_step:
-            os.makedirs(save_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name+".pt"))
             break
 
 if __name__ == "__main__":
@@ -145,6 +141,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="output")
     parser.add_argument("--use_standard_transformer", action="store_true")
     parser.add_argument("--num_atten_layer", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=128)
     
     config = MainConfig()
     
@@ -206,6 +203,9 @@ if __name__ == "__main__":
     
     save_dir = parser.parse_args().save_dir
     
+    config.exp_name = parser.parse_args().exp_name
+    
+    config.trainconfig.batch_size = parser.parse_args().batch_size
     
     
     main(config, save_dir)
