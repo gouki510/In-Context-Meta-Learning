@@ -48,7 +48,6 @@ class ICLDataConfig(TrainDataConfig):
   data_type: str = "holdout" # bursty, holdout, no_support, flip
   task_ways: int = 8
 
-
 @dataclass
 class ICL2DataConfig(TrainDataConfig):
   data_type: str = "flip" # bursty, holdout, no_support, flip

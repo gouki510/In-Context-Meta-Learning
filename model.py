@@ -858,6 +858,5 @@ class MultiTaskInputEmbedderV3(nn.Module):
 
         # last label remove
         # hh = hh[:, :-1]
-        
 
         return hh

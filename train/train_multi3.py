@@ -10,7 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from data import SamplingLoader, IterDataset, SamplingDataset, MultiTaskSamplingLoader
 from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbedderV1, MultiTaskInputEmbedderV3
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
-from configs.config_multi2 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
+from configs.config_multi3 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
 from utils import visalize_attention
 import matplotlib.pyplot as plt
@@ -28,10 +28,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config, save_dir):
-    if config.modelconfig.use_standard_transformer:
-        wandb.init(project="induction-head-multitask3-standard", config=asdict(config))
-    else:
-        wandb.init(project="induction-head-multitask3-v2", config=asdict(config))
+    wandb.init(project="multiple-phase-induction-head", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig

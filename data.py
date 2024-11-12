@@ -412,19 +412,30 @@ class MultiTaskSamplingLoader(DataLoader):
           x_for_task_vector = torch.cat([x_for_task_vector, query_x])
           labels_for_task_vector = torch.cat([labels_for_task_vector.flatten(), query_label.flatten()])
           tasks_for_task_vector = torch.cat([torch.tensor(tasks_for_task_vector).flatten(), torch.tensor(query_task).flatten()])
-      
           yield {
               "tasks": tasks,
               "examples":x.to(torch.float32),
               "labels":labels.flatten(),
               "classes" : torch.from_numpy(classes),
-              "task_vector" : {
-                  "tasks":tasks_for_task_vector,
-                  "examples":x_for_task_vector.to(torch.float32),
-                  "labels":labels_for_task_vector,
-                  "classes" : torch.cat([torch.from_numpy(classes_for_task_vector).flatten(), torch.from_numpy(query_class).flatten()])
-              }
+              # "task_vector" : {
+              #     "tasks":tasks_for_task_vector,
+              #     "examples":x_for_task_vector.to(torch.float32),
+              #     "labels":labels_for_task_vector,
+              #     "classes" : torch.cat([torch.from_numpy(classes_for_task_vector).flatten(), torch.from_numpy(query_class).flatten()])
+              # }
           }
+          # yield {
+          #     "tasks": tasks,
+          #     "examples":x.to(torch.float32),
+          #     "labels":labels.flatten(),
+          #     "classes" : torch.from_numpy(classes),
+          #     "task_vector" : {
+          #         "tasks":tasks_for_task_vector,
+          #         "examples":x_for_task_vector.to(torch.float32),
+          #         "labels":labels_for_task_vector,
+          #         "classes" : torch.cat([torch.from_numpy(classes_for_task_vector).flatten(), torch.from_numpy(query_class).flatten()])
+          #     }
+          # }
           
       elif self.data_type == "holdout":
         # choise few shot tasks

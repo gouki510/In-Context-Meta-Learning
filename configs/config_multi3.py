@@ -70,6 +70,6 @@ class MainConfig:
   icl2dataconfig: ICL2DataConfig = ICL2DataConfig()
   modelconfig: TransformerConfig = TransformerConfig()
   trainconfig: TrainConfig = TrainConfig()
-  device: str = "cuda:1"
+  device: str = "cuda:0"
   exp_name: str = "some_exp"
 # define config
