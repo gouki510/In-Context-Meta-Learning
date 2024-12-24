@@ -12,7 +12,7 @@ from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbe
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from configs.config_multi2 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
-from utils import visalize_attention, example_label_extract_attention
+from utils import visalize_attention, example_label_extract_attention, metrics_for_circuit
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -28,10 +28,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config, save_dir):
-    if config.modelconfig.use_standard_transformer:
-        wandb.init(project="202406_induction-head-multitask3-standard", config=asdict(config))
-    else:
-        wandb.init(project="202406_induction-head-multitask3-v2", config=asdict(config))
+    wandb.init(project="multiple_phase_induction-head-20241217", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -47,26 +44,30 @@ def main(config, save_dir):
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
     iclloader = MultiTaskSamplingLoader(icldataconfig, Dataset)
+    iclloader.task_ind = trainloader.task_ind
     icl_seq_generator = iclloader.get_seq
     icl_dataset = IterDataset(icl_seq_generator)
     icl_dataloader = torch.utils.data.DataLoader(icl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
     iwlloader = MultiTaskSamplingLoader(iwldataconfig, Dataset)
+    iwlloader.task_ind = trainloader.task_ind
     iwl_seq_generator = iwlloader.get_seq
     iwl_dataset = IterDataset(iwl_seq_generator)
     iwl_dataloader = torch.utils.data.DataLoader(iwl_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
 
-    # icl2loader = MultiTaskSamplingLoader(icl2dataconfig, Dataset)
-    # icl2_seq_generator = icl2loader.get_seq
-    # icl2_dataset = IterDataset(icl2_seq_generator)
-    # icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
-
+    icl2loader = MultiTaskSamplingLoader(icl2dataconfig, Dataset)
+    icl2loader.task_ind = trainloader.task_ind
+    icl2_seq_generator = icl2loader.get_seq
+    icl2_dataset = IterDataset(icl2_seq_generator)
+    icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
+    
     # model
     embedder = MultiTaskInputEmbedderV3(modelconfig)
     if not modelconfig.use_standard_transformer:
         model = TransformerICL(embedder, modelconfig)
     else:
         model = Transformer(embedder, modelconfig)
+    print(model)
     model.to(config.device)
 
     # optimizer
@@ -80,13 +81,12 @@ def main(config, save_dir):
     # loss
     criterion = nn.CrossEntropyLoss()
     step = 0
-    for (data_dict, icl_data_dict, iwl_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader):
+    for (data_dict, icl_data_dict, iwl_data_dict, icl2_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader, icl2_dataloader):
         model.train()   
         data_dict = to_gpu_dict(data_dict, device=config.device)
         icl_data_dict = to_gpu_dict(icl_data_dict, device=config.device)
         iwl_data_dict = to_gpu_dict(iwl_data_dict , device=config.device)
-        # icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
-        
+        icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
         logits = model(data_dict["examples"], data_dict["labels"], data_dict["tasks"])
         query_logit = logits[:,-1,:]
 
@@ -101,6 +101,7 @@ def main(config, save_dir):
         if step % trainconfig.every_eval == 0:
             model.eval()
             with torch.no_grad():
+
                 logits = model(icl_data_dict["examples"], icl_data_dict["labels"], icl_data_dict["tasks"])
                 query_logit = logits[:,-1,:]
                 icl_acc = cal_acc(icl_data_dict["labels"][:, -1], query_logit)
@@ -111,15 +112,18 @@ def main(config, save_dir):
                 iwl_acc = cal_acc(iwl_data_dict["labels"][:, -1], query_logit)
                 wandb.log({"valid/iwl_acc":iwl_acc}, step=step)
 
-                # logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["task"])
-                # query_logit = logits[:,-1,:]
-                # icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1, -1], query_logit)
-                # wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
+                logits = model(icl2_data_dict["examples"], icl2_data_dict["labels"], icl2_data_dict["tasks"])
+                query_logit = logits[:,-1,:]
+                icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1], query_logit)
+                wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
+                
                 for layer_i in range(modelconfig.num_atten_layer):
                     attn_img = visalize_attention(model, layer_i)
-                    wandb.log({"attention/layer_{}".format(layer_i):[wandb.Image(attn_img)]}, step=step)
+                    wandb.log({f"attention/layer_{layer_i}":[wandb.Image(attn_img)]})
                     atten_log = example_label_extract_attention(model, layer_i, n_ctx=modelconfig.n_ctx)
                     wandb.log(atten_log)
+                    metrics_log = metrics_for_circuit(model, layer_i, n_ctx=modelconfig.n_ctx)
+                    wandb.log(metrics_log)
                 del attn_img, iwl_acc, icl_acc
                 
             os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
@@ -142,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--p_bursty", type=float, default=1)
     parser.add_argument("--num_tasks", type=int, default=3)
-    parser.add_argument("--num_layer", type=int, default=2)
+    parser.add_argument("--num_layer", type=int, default=1)
     parser.add_argument("--d_model", type=int, default=128)
     parser.add_argument("--exp_name", type=str, default="some_exp")
     parser.add_argument("--num_seq", type=int, default=8)
@@ -152,6 +156,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_atten_layer", type=int, default=2)
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--optimize_step", type=int, default=int(4e5))
+    parser.add_argument("--num_heads", type=int, default=1)
     
     config = MainConfig()
     
@@ -190,14 +195,17 @@ if __name__ == "__main__":
     config.traindataconfig.num_seq = parser.parse_args().num_seq
     config.icldataconfig.num_seq = parser.parse_args().num_seq
     config.iwldataconfig.num_seq = parser.parse_args().num_seq
+    config.icl2dataconfig.num_seq = parser.parse_args().num_seq
     config.modelconfig.num_seq = parser.parse_args().num_seq
     
     # same task in seawuence
     config.traindataconfig.task_ways = config.traindataconfig.num_seq
     config.icldataconfig.task_ways = config.icldataconfig.num_seq
     config.iwldataconfig.task_ways = config.iwldataconfig.num_seq
-    # config.icl2config.task_ways = parser.parse_args().num_seq
+    config.icl2dataconfig.task_ways = config.icl2dataconfig.num_seq
     config.modelconfig.task_ways = config.modelconfig.num_seq
+    
+    config.modelconfig.num_heads = parser.parse_args().num_heads
     
     # config.modelconfig.n_ctx = (config.modelconfig.num_seq+1)*2
     config.modelconfig.n_ctx = (config.traindataconfig.num_seq+1)*2 -1

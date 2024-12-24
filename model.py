@@ -142,6 +142,21 @@ class Attention(nn.Module):
     def get_attention_matrix(self):
         return self.atten_matrix
     
+    def set_causal_mask_type(self, causal_mask_type):
+        self.causal_mask_type = causal_mask_type
+        if causal_mask_type == "bigram":
+            self.mask = torch.zeros((self.n_ctx, self.n_ctx))
+            self.mask[-1][-1] = 1
+        elif causal_mask_type == "label attention":
+            self.mask = torch.zeros((self.n_ctx, self.n_ctx))
+            self.mask[-1, 1::2] = 1
+        elif causal_mask_type == "chunk example":
+            self.mask = torch.zeros((self.n_ctx, self.n_ctx))
+            for i in range(self.n_ctx // 2):
+                self.mask[2*i+1, 2*i] = 1
+                # self.mask[2*i+1, -1] = 1
+        elif causal_mask_type == "None":
+            pass
 
 
 class Dense(nn.Module):
@@ -517,6 +532,8 @@ class TransformerICL(nn.Module):
         self.seq_model = config.seq_model # "Attention" , "LSTM", "Mamba", "RNN", "S4", "LinerAttention"
         self.d_emb = config.d_emb
         self.use_scaled_attention = config.use_scaled_attention
+        
+        self.causal_mask_type = config.causal_mask_type
 
         self.embedder = embedder
         # self.pos_embed = PosEmbed(n_ctx, d_model)
@@ -620,8 +637,16 @@ class TransformerICL(nn.Module):
     def get_attention_matrix(self, layer):
         return self.atten_list[layer].get_attention_matrix()
     
-                
-                
+    def set_causal_mask(self, layer, causal_mask_type):
+        self.causal_mask_type[layer] = causal_mask_type
+        if self.causal_mask_type[layer] == "bigram":
+            self.atten_list[layer].set_bigram_mask()
+        elif self.causal_mask_type[layer] == "label attention":
+            self.atten_list[layer].set_label_attention_mask()
+        elif self.causal_mask_type[layer] == "chunk example":
+            self.atten_list[layer].set_chunk_example_mask()
+        elif self.causal_mask_type[layer] == "None":
+            self.atten_list[layer].set_none_mask()
     
 class MultiTaskInputEmbedderV1(nn.Module):
     """Input embedder."""

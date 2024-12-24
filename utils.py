@@ -28,7 +28,28 @@ def example_label_extract_attention(model, layer_i,  n_ctx=8):
             log[f"atten_value/layer_{layer_i}_head_{j}_token_{i}_from_ex"] = ex_attn[i]
     # wandb_log(log)
     return log
-        
+
+def metrics_for_circuit(model, layer_i, n_ctx=8):
+    """
+    Bigram_metrics = A_{T,T}
+    Previous_metrics = A_{2k,2k+1} (0<=k<=1/2(T-1))
+    Relational_metrics = A_{2k+1,T} (0<=k<=1/2(T-2))
+    """
+    attn_matrix = model.get_attention_matrix(layer_i)
+    num_heads = attn_matrix.size(0)
+    T = n_ctx-1
+    log = {}
+    for h in range(num_heads):
+        attn = attn_matrix[h].detach().cpu()
+        bigram_metrics = attn[T, T].detach().cpu().numpy()
+        log[f"bigram_metrics/layer_{layer_i}_head_{h}_from_{T}_to_{T}"] = bigram_metrics
+        for k in range((T)//2):
+            previous_metrics = attn[2*k+1, 2*k].detach().cpu().numpy()
+            relational_metrics = attn[T, 2*k+1].detach().cpu().numpy()
+            log[f"previous_metrics/layer_{layer_i}_head_{h}_from_{2*k}_to_{2*k+1}"] = previous_metrics
+            log[f"relational_metrics/layer_{layer_i}_head_{h}_from_{2*k+1}_to_{T}"] = relational_metrics
+    return log
+
 def cal_entropy_attention(model, layer_i):
     attn_matrix = model.get_attention_matrix(layer_i)
     num_heads = attn_matrix.size(0)

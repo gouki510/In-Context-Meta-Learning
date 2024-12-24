@@ -31,13 +31,13 @@ class TrainDataConfig:
   num_labels: int = 32
   eps: float = 0.1
   alpha: float = 0
-  item_ways: int = 2
+  item_ways: int = 1
   p_bursty: float = 1
   data_type: str = "bursty" # bursty, holdout, no_support, flip
   num_seq: int = 8
   num_holdout_classes: int = 10
   num_tasks: int = 3
-  task_ways: int = 8
+  task_ways: int = 4
   p_icl: float = 0
 
   
@@ -59,7 +59,7 @@ class TrainConfig:
   batch_size: int = 128
   optimize_step: int = int(4e5)
   lr: float = 0.01
-  optimizer: str = "sgd" # adam, sgd, adamw
+  optimizer: str = "adamw" # adam, sgd, adamw
   every_eval: int = 200
 
 @dataclass

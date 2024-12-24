@@ -10,7 +10,7 @@ class TransformerConfig:
   d_mlp: int = 128
   d_head: int = 128
   num_heads: int = 1
-  n_ctx: int = int(((num_seq+1)*3)-1)
+  n_ctx: int = int(((num_seq+1)*2)-1)
   act_type: str = "ReLU"
   use_cache: bool = False
   use_ln: bool = True
@@ -21,7 +21,8 @@ class TransformerConfig:
   task_ways: int = num_seq
   seq_model: str = "Attention"  
   use_scaled_attention: bool = False
-  
+  use_standard_transofrmer: bool = False
+  causal_mask_type: list[str] = ["None", "None"] # bigram, label attention, chunk example, None
 
 @dataclass
 class TrainDataConfig:

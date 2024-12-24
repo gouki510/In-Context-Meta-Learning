@@ -26,6 +26,7 @@ RUN apt-get update -q \
     && rm -rf /var/lib/apt/lists/*
 
 # python
+RUN pip install wandb einops matplotlib
 # RUN pip install blobfile mod torcheval
 # RUN conda install scipy matplotlib pandas plotly seaborn
 # RUN conda install -c conda-forge lightning
