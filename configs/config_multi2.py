@@ -1,4 +1,5 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from typing import List
 
 @dataclass
 class TransformerConfig:
@@ -22,7 +23,7 @@ class TransformerConfig:
   seq_model: str = "Attention"  
   use_scaled_attention: bool = False
   use_standard_transofrmer: bool = False
-  causal_mask_type: list[str] = ["None", "None"] # bigram, label attention, chunk example, None
+  causal_mask_type: List[str] = field(default_factory=lambda: ["None", "None"]) # bigram, label attention, chunk example, None
 
 @dataclass
 class TrainDataConfig:

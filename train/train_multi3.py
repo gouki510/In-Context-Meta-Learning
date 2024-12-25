@@ -28,7 +28,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config, save_dir):
-    wandb.init(project="multiple_phase_induction-head-20241217", config=asdict(config))
+    wandb.init(project="multiple_phase_induction-head-20241224_causal_exp", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
@@ -157,6 +157,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--optimize_step", type=int, default=int(4e5))
     parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--causal_mask_type", type=lambda x: x.split(","), default=["None", "None"])
     
     config = MainConfig()
     
@@ -225,7 +226,7 @@ if __name__ == "__main__":
     
     save_dir = parser.parse_args().save_dir
 
-    
+    config.modelconfig.causal_mask_type = parser.parse_args().causal_mask_type
     
     
     main(config, save_dir)

@@ -115,7 +115,8 @@ class Attention(nn.Module):
         self.register_buffer("atten_matrix", torch.zeros((num_heads, n_ctx, n_ctx)))
         self.d_head = d_head
         self.scaled = scaled
-
+        self.n_ctx = n_ctx
+        
     def forward(self, x):
         k = torch.einsum("ihd,bpd->biph", self.W_K, x)
         q = torch.einsum("ihd,bpd->biph", self.W_Q, x)
@@ -142,19 +143,21 @@ class Attention(nn.Module):
     def get_attention_matrix(self):
         return self.atten_matrix
     
-    def set_causal_mask_type(self, causal_mask_type):
-        self.causal_mask_type = causal_mask_type
+    def set_causal_mask(self, causal_mask_type):
         if causal_mask_type == "bigram":
-            self.mask = torch.zeros((self.n_ctx, self.n_ctx))
+            self.mask = torch.tril(torch.ones((self.n_ctx, self.n_ctx)))
+            self.mask[-1, :] = 0
             self.mask[-1][-1] = 1
-        elif causal_mask_type == "label attention":
-            self.mask = torch.zeros((self.n_ctx, self.n_ctx))
+        elif causal_mask_type == "label_attention":
+            self.mask = torch.tril(torch.ones((self.n_ctx, self.n_ctx)))
+            self.mask[-1, :] = 0
             self.mask[-1, 1::2] = 1
-        elif causal_mask_type == "chunk example":
-            self.mask = torch.zeros((self.n_ctx, self.n_ctx))
+            # self.mask[-1][-1] = 1
+        elif causal_mask_type == "chunk_example":
+            self.mask = torch.tril(torch.ones((self.n_ctx, self.n_ctx)))
             for i in range(self.n_ctx // 2):
+                self.mask[2*i+1, :] = 0
                 self.mask[2*i+1, 2*i] = 1
-                # self.mask[2*i+1, -1] = 1
         elif causal_mask_type == "None":
             pass
 
@@ -532,9 +535,8 @@ class TransformerICL(nn.Module):
         self.seq_model = config.seq_model # "Attention" , "LSTM", "Mamba", "RNN", "S4", "LinerAttention"
         self.d_emb = config.d_emb
         self.use_scaled_attention = config.use_scaled_attention
-        
         self.causal_mask_type = config.causal_mask_type
-
+        
         self.embedder = embedder
         # self.pos_embed = PosEmbed(n_ctx, d_model)
         if self.seq_model == "Attention":
@@ -543,6 +545,9 @@ class TransformerICL(nn.Module):
                     Attention(d_model, num_heads, d_head, n_ctx, scaled=self.use_scaled_attention) for i in range(self.num_atten_layer)
                 ]
             )
+            for i in range(self.num_atten_layer):
+                self.set_causal_mask(i, self.causal_mask_type[i])
+                
         elif self.seq_model == "LSTM":
             self.rnn = nn.LSTM(self.d_emb, d_model, self.num_atten_layer, batch_first=True)
         elif self.seq_model == "RNN":
@@ -570,6 +575,8 @@ class TransformerICL(nn.Module):
         for name, module in self.named_modules():
             if type(module) == HookPoint:
                 module.give_name(name)
+            
+
 
     def forward(self, x, labels, tasks=None):
         x = self.embedder(x, labels, tasks)
@@ -638,15 +645,8 @@ class TransformerICL(nn.Module):
         return self.atten_list[layer].get_attention_matrix()
     
     def set_causal_mask(self, layer, causal_mask_type):
-        self.causal_mask_type[layer] = causal_mask_type
-        if self.causal_mask_type[layer] == "bigram":
-            self.atten_list[layer].set_bigram_mask()
-        elif self.causal_mask_type[layer] == "label attention":
-            self.atten_list[layer].set_label_attention_mask()
-        elif self.causal_mask_type[layer] == "chunk example":
-            self.atten_list[layer].set_chunk_example_mask()
-        elif self.causal_mask_type[layer] == "None":
-            self.atten_list[layer].set_none_mask()
+        print("set_causal_mask", causal_mask_type)
+        self.atten_list[layer].set_causal_mask(causal_mask_type)
     
 class MultiTaskInputEmbedderV1(nn.Module):
     """Input embedder."""
