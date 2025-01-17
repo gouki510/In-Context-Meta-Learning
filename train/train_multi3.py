@@ -27,14 +27,15 @@ def to_gpu_dict(dic, device="cuda:0"):
     return dic
 
 
-def main(config, save_dir):
-    wandb.init(project="multiple_phase_20250117_WoMultiHead", config=asdict(config))
+def main(config, save_dir, project_name):
+    wandb.init(project=project_name, config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
     icldataconfig = config.icldataconfig
     iwldataconfig = config.iwldataconfig
     icl2dataconfig = config.icl2dataconfig
+    icl3dataconfig = config.icl3dataconfig
     # data
     Dataset = SamplingDataset(traindataconfig)
     
@@ -61,6 +62,12 @@ def main(config, save_dir):
     icl2_dataset = IterDataset(icl2_seq_generator)
     icl2_dataloader = torch.utils.data.DataLoader(icl2_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
     
+    icl3loader = MultiTaskSamplingLoader(icl3dataconfig, Dataset)
+    icl3loader.task_ind = trainloader.task_ind
+    icl3_seq_generator = icl3loader.get_seq
+    icl3_dataset = IterDataset(icl3_seq_generator)
+    icl3_dataloader = torch.utils.data.DataLoader(icl3_dataset, batch_size=trainconfig.batch_size, pin_memory=True, num_workers=os.cpu_count())
+    
     # model
     embedder = MultiTaskInputEmbedderV3(modelconfig)
     if not modelconfig.use_standard_transformer:
@@ -69,6 +76,8 @@ def main(config, save_dir):
         model = Transformer(embedder, modelconfig)
     print(model)
     model.to(config.device)
+    if hasattr(torch, 'compile'):
+        model = torch.compile(model)
 
     # optimizer
     if trainconfig.optimizer == "adam":
@@ -81,12 +90,13 @@ def main(config, save_dir):
     # loss
     criterion = nn.CrossEntropyLoss()
     step = 0
-    for (data_dict, icl_data_dict, iwl_data_dict, icl2_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader, icl2_dataloader):
+    for (data_dict, icl_data_dict, iwl_data_dict, icl2_data_dict, icl3_data_dict) in zip(tqdm(train_dataloader), icl_dataloader, iwl_dataloader, icl2_dataloader, icl3_dataloader):
         model.train()   
         data_dict = to_gpu_dict(data_dict, device=config.device)
         icl_data_dict = to_gpu_dict(icl_data_dict, device=config.device)
         iwl_data_dict = to_gpu_dict(iwl_data_dict , device=config.device)
         icl2_data_dict = to_gpu_dict(icl2_data_dict , device=config.device)
+        icl3_data_dict = to_gpu_dict(icl3_data_dict , device=config.device)
         logits = model(data_dict["examples"], data_dict["labels"], data_dict["tasks"])
         query_logit = logits[:,-1,:]
 
@@ -96,7 +106,8 @@ def main(config, save_dir):
         loss.backward()
         optimizer.step()
         train_acc = cal_acc(data_dict["labels"][:, -1], query_logit)
-        wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
+        if step % 100 == 0:
+            wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
         
         if step % trainconfig.every_eval == 0:
             model.eval()
@@ -117,6 +128,11 @@ def main(config, save_dir):
                 icl2_acc = cal_acc(icl2_data_dict["labels"][:, -1], query_logit)
                 wandb.log({"valid/icl2_acc":icl2_acc}, step=step)
                 
+                logits = model(icl3_data_dict["examples"], icl3_data_dict["labels"], icl3_data_dict["tasks"])
+                query_logit = logits[:,-1,:]
+                icl3_acc = cal_acc(icl3_data_dict["labels"][:, -1], query_logit)
+                wandb.log({"valid/icl3_acc":icl3_acc}, step=step)
+                
                 for layer_i in range(modelconfig.num_atten_layer):
                     attn_img = visalize_attention(model, layer_i)
                     wandb.log({f"attention/layer_{layer_i}":[wandb.Image(attn_img)]})
@@ -124,12 +140,12 @@ def main(config, save_dir):
                     wandb.log(atten_log)
                     metrics_log = metrics_for_circuit(model, layer_i, n_ctx=modelconfig.n_ctx)
                     wandb.log(metrics_log)
-                del attn_img, iwl_acc, icl_acc
+                del attn_img, iwl_acc, icl_acc, icl2_acc, icl3_acc
                 
             os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
             torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name, config.exp_name+"_"+str(step)+".pt"))
                 
-        print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
+        # print("\r step:",step+1,"/",trainconfig.optimize_step, end="")
         step+=1
         if step > trainconfig.optimize_step:
             os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
@@ -158,6 +174,7 @@ if __name__ == "__main__":
     parser.add_argument("--optimize_step", type=int, default=int(4e5))
     parser.add_argument("--num_heads", type=int, default=1)
     parser.add_argument("--causal_mask_type", type=lambda x: x.split(","), default=["None", "None"])
+    parser.add_argument("--project_name", type=str, default="multiple_phase_base")
     
     config = MainConfig()
     
@@ -166,45 +183,52 @@ if __name__ == "__main__":
     config.icldataconfig.item_ways = parser.parse_args().ways
     config.iwldataconfig.item_ways = parser.parse_args().ways
     config.icl2dataconfig.item_ways = parser.parse_args().ways
+    config.icl3dataconfig.item_ways = parser.parse_args().ways
     
     config.traindataconfig.num_classes = parser.parse_args().num_classes
     config.icldataconfig.num_classes = parser.parse_args().num_classes
     config.iwldataconfig.num_classes = parser.parse_args().num_classes
     config.icl2dataconfig.num_classes = parser.parse_args().num_classes
+    config.icl3dataconfig.num_classes = parser.parse_args().num_classes
     
     config.traindataconfig.eps = parser.parse_args().eps
     config.icldataconfig.eps = parser.parse_args().eps
     config.iwldataconfig.eps = parser.parse_args().eps
     config.icl2dataconfig.eps = parser.parse_args().eps
+    config.icl3dataconfig.eps = parser.parse_args().eps
     
     config.traindataconfig.alpha = parser.parse_args().alpha
     config.icldataconfig.alpha = parser.parse_args().alpha
     config.iwldataconfig.alpha = parser.parse_args().alpha
     config.icl2dataconfig.alpha = parser.parse_args().alpha
+    config.icl3dataconfig.alpha = parser.parse_args().alpha
     
     config.traindataconfig.p_bursty = parser.parse_args().p_bursty
     config.icldataconfig.p_bursty = parser.parse_args().p_bursty
     config.iwldataconfig.p_bursty = parser.parse_args().p_bursty
     config.icl2dataconfig.p_bursty = parser.parse_args().p_bursty
+    config.icl3dataconfig.p_bursty = parser.parse_args().p_bursty
     
     config.traindataconfig.num_tasks = parser.parse_args().num_tasks
     config.icldataconfig.num_tasks = parser.parse_args().num_tasks
     config.iwldataconfig.num_tasks = parser.parse_args().num_tasks
     config.icl2dataconfig.num_tasks = parser.parse_args().num_tasks
     config.modelconfig.num_tasks = parser.parse_args().num_tasks
+    config.icl3dataconfig.num_tasks = parser.parse_args().num_tasks
     
     config.traindataconfig.num_seq = parser.parse_args().num_seq
     config.icldataconfig.num_seq = parser.parse_args().num_seq
     config.iwldataconfig.num_seq = parser.parse_args().num_seq
     config.icl2dataconfig.num_seq = parser.parse_args().num_seq
     config.modelconfig.num_seq = parser.parse_args().num_seq
-    
+    config.icl3dataconfig.num_seq = parser.parse_args().num_seq
     # same task in seawuence
     config.traindataconfig.task_ways = config.traindataconfig.num_seq
     config.icldataconfig.task_ways = config.icldataconfig.num_seq
     config.iwldataconfig.task_ways = config.iwldataconfig.num_seq
     config.icl2dataconfig.task_ways = config.icl2dataconfig.num_seq
     config.modelconfig.task_ways = config.modelconfig.num_seq
+    config.icl3dataconfig.task_ways = config.icl3dataconfig.num_seq
     
     config.modelconfig.num_heads = parser.parse_args().num_heads
     
@@ -229,4 +253,4 @@ if __name__ == "__main__":
     config.modelconfig.causal_mask_type = parser.parse_args().causal_mask_type
     
     
-    main(config, save_dir)
+    main(config, save_dir, parser.parse_args().project_name)

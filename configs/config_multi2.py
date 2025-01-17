@@ -56,12 +56,16 @@ class ICL2DataConfig(TrainDataConfig):
   data_type: str = "flip" # bursty, holdout, no_support, flip
   
 @dataclass
+class ICL3DataConfig(TrainDataConfig):
+  data_type: str = "random_label" # bursty, holdout, no_support, flip
+  
+@dataclass
 class TrainConfig:
   batch_size: int = 128
   optimize_step: int = int(4e5)
   lr: float = 0.01
   optimizer: str = "sgd" # adam, sgd, adamw
-  every_eval: int = 1000
+  every_eval: int = 5000
 
 @dataclass
 class MainConfig:
@@ -69,6 +73,7 @@ class MainConfig:
   icldataconfig: ICLDataConfig = ICLDataConfig()
   iwldataconfig: IWLDataConfig = IWLDataConfig()
   icl2dataconfig: ICL2DataConfig = ICL2DataConfig()
+  icl3dataconfig: ICL3DataConfig = ICL3DataConfig()
   modelconfig: TransformerConfig = TransformerConfig()
   trainconfig: TrainConfig = TrainConfig()
   device: str = "cuda:0"
