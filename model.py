@@ -108,9 +108,9 @@ class Attention(nn.Module):
         self.W_V = nn.Parameter(
             torch.randn(num_heads, d_head, d_model) / np.sqrt(d_model)
         )
-        # self.W_O = nn.Parameter(
-        #     torch.randn(d_model, d_head * num_heads) / np.sqrt(d_model)
-        # )
+        self.W_O = nn.Parameter(
+            torch.randn(d_model, d_head * num_heads) / np.sqrt(d_model)
+        )
         self.register_buffer("mask", torch.tril(torch.ones((n_ctx, n_ctx))))
         self.register_buffer("atten_matrix", torch.zeros((num_heads, n_ctx, n_ctx)))
         self.d_head = d_head
@@ -132,7 +132,7 @@ class Attention(nn.Module):
         self.set_attention_matrix(attn_matrix.detach().cpu())
         z = torch.einsum("biph,biqp->biqh", v, attn_matrix)
         z_flat = einops.rearrange(z, "b i q h -> b q (i h)")
-        # out = torch.einsum("df,bqf->bqd", self.W_O, z_flat)
+        out = torch.einsum("df,bqf->bqd", self.W_O, z_flat)
         out = z_flat
         return out
 

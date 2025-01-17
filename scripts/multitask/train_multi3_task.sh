@@ -3,9 +3,11 @@
 # python train/train_multi3.py --ways 1 --num_class 128 --eps 0.1 --device cuda:1 --p_bursty 1 --num_task 2
 # python train/train_multi3.py --ways 1 --num_class 256 --eps 0.1 --device cuda:1 --p_bursty 1 --num_task 4
 # python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:0 --p_bursty 1 --num_task 1 --num_seq 2 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t1_s2
-python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:0 --p_bursty 1 --num_task 2 --num_seq 2 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t2_s2
-python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:0 --p_bursty 1 --num_task 4 --num_seq 2 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t4_s2
-python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:0 --p_bursty 1 --num_task 8 --num_seq 2 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t8_s2
+python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 1 --num_seq 4 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t2_s2
+python train/train_multi3.py --ways 2 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 1 --num_seq 4 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name "multi3_ih_w4_c64_e0.1_p0_t1_s8"
+python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 2 --num_seq 4 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t2_s2
+python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 3 --num_seq 4 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t4_s2
+python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 4 --num_seq 4 --num_layer 1 --num_atten_layer 2 --optimize_step 1000000 --exp_name task_w1_c64_e0.1_p1_t8_s2
 # python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 16
 # python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 32
 # python train/train_multi3.py --ways 1 --num_class 64 --eps 0.1 --device cuda:2 --p_bursty 1 --num_task 64

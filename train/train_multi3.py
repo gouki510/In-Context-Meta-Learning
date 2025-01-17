@@ -28,7 +28,7 @@ def to_gpu_dict(dic, device="cuda:0"):
 
 
 def main(config, save_dir):
-    wandb.init(project="multiple_phase_induction-head-20241224_causal_exp", config=asdict(config))
+    wandb.init(project="multiple_phase_20250117_WoMultiHead", config=asdict(config))
     trainconfig = config.trainconfig
     modelconfig = config.modelconfig
     traindataconfig = config.traindataconfig
