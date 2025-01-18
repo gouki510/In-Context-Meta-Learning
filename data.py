@@ -598,9 +598,10 @@ class MultiTaskSamplingLoader(DataLoader):
         labels = (labels + self.task_ind[tasks[0], classes].reshape(-1,1)) % self.num_labels
         
         # random label
-        labels = np.random.randint(self.num_labels, size=(self.num_seq,1))
+        label_ordering = np.random.permutation(self.num_seq)
+        labels = labels[label_ordering]
         # to tensor
-        labels = torch.from_numpy(labels)
+        # labels = torch.from_numpy(labels)
       
         
         # select query labels

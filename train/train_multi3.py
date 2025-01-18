@@ -75,9 +75,10 @@ def main(config, save_dir, project_name):
     else:
         model = Transformer(embedder, modelconfig)
     print(model)
+    # check device
     model.to(config.device)
-    if hasattr(torch, 'compile'):
-        model = torch.compile(model)
+    # if hasattr(torch, 'compile'):
+    #     model = torch.compile(model)
 
     # optimizer
     if trainconfig.optimizer == "adam":
@@ -108,6 +109,14 @@ def main(config, save_dir, project_name):
         train_acc = cal_acc(data_dict["labels"][:, -1], query_logit)
         if step % 100 == 0:
             wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
+            # task wise acc
+            task_dict = {task_i:[] for task_i in range(modelconfig.num_tasks)}
+            for task_i, acc in zip(data_dict["tasks"], train_acc):
+                task_dict[task_i].append(acc)
+            # mean
+            task_dict = {task_i:np.mean(acc) for task_i, acc in task_dict.items()}
+            for task_i in modelconfig.task_ind:
+                wandb.log({f"train/task{task_i}_acc":task_dict[task_i]}, step=step)
         
         if step % trainconfig.every_eval == 0:
             model.eval()
