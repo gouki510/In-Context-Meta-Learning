@@ -22,6 +22,9 @@ import os
 def cal_acc(t,p):
     p_arg = torch.argmax(p,dim=1)
     return torch.sum(t == p_arg) / p.shape[0]
+def cal_acc_each_step(t,p):
+    p_arg = torch.argmax(p,dim=1)
+    return t == p_arg 
 def to_gpu_dict(dic, device="cuda:0"):
     dic = {k:v.to(device) for k,v in dic.items()}
     return dic
@@ -111,11 +114,13 @@ def main(config, save_dir, project_name):
             wandb.log({"train/acc":train_acc,"train/loss":loss}, step=step)
             # task wise acc
             task_dict = {task_i:[] for task_i in range(modelconfig.num_tasks)}
-            for task_i, acc in zip(data_dict["tasks"], train_acc):
-                task_dict[task_i].append(acc)
+            train_acc_each_step = cal_acc_each_step(data_dict["labels"][:, -1], query_logit)
+
+            for task_i, acc in zip(data_dict["tasks"][:,0], train_acc_each_step):
+                task_dict[task_i.item()].append(acc.item())
             # mean
             task_dict = {task_i:np.mean(acc) for task_i, acc in task_dict.items()}
-            for task_i in modelconfig.task_ind:
+            for task_i in range(modelconfig.num_tasks):
                 wandb.log({f"train/task{task_i}_acc":task_dict[task_i]}, step=step)
         
         if step % trainconfig.every_eval == 0:

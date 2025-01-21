@@ -256,7 +256,8 @@ class MultiTaskSamplingLoader(DataLoader):
       self.p_bursty = 0
     prob = np.array([1/((k+1)**self.alpha) for k in range(self.num_classes)])
     self.prob = prob/prob.sum()
-    task_prob = np.array([1/((k+1)**self.alpha) for k in range(self.num_task)])
+    task_alpha = self.alpha
+    task_prob = np.array([1/((k+1)**task_alpha) for k in range(self.num_task)])
     self.task_prob = task_prob/task_prob.sum()
     # task_vector
     self.task_for_task_vector = np.random.choice(self.num_task, self.num_seq, p=self.task_prob)
