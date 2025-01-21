@@ -32,6 +32,7 @@ class TrainDataConfig:
   num_labels: int = 32
   eps: float = 0.1
   alpha: float = 0
+  task_alpha: float = 0
   item_ways: int = 1
   p_bursty: float = 1
   data_type: str = "bursty" # bursty, holdout, no_support, flip

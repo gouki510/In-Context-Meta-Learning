@@ -250,6 +250,7 @@ class MultiTaskSamplingLoader(DataLoader):
     self.p_icl = conf.p_icl
     self.eps = conf.eps
     self.dim = conf.dim
+    self.task_alpha = conf.task_alpha
     if self.item_ways != 0 or self.task_ways != 0:
       assert self.num_seq % self.item_ways == 0 and self.num_seq % self.task_ways == 0
     if self.item_ways == 0 or self.task_ways == 0:

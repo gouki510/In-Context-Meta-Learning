@@ -189,6 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_heads", type=int, default=1)
     parser.add_argument("--causal_mask_type", type=lambda x: x.split(","), default=["None", "None"])
     parser.add_argument("--project_name", type=str, default="multiple_phase_base")
+    parser.add_argument("--task_alpha", type=float, default=0)
     
     config = MainConfig()
     
@@ -216,6 +217,12 @@ if __name__ == "__main__":
     config.iwldataconfig.alpha = parser.parse_args().alpha
     config.icl2dataconfig.alpha = parser.parse_args().alpha
     config.icl3dataconfig.alpha = parser.parse_args().alpha
+    
+    config.traindataconfig.task_alpha = parser.parse_args().task_alpha
+    config.icldataconfig.task_alpha = parser.parse_args().task_alpha
+    config.iwldataconfig.task_alpha = parser.parse_args().task_alpha
+    config.icl2dataconfig.task_alpha = parser.parse_args().task_alpha
+    config.icl3dataconfig.task_alpha = parser.parse_args().task_alpha
     
     config.traindataconfig.p_bursty = parser.parse_args().p_bursty
     config.icldataconfig.p_bursty = parser.parse_args().p_bursty
