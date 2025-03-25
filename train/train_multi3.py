@@ -12,7 +12,7 @@ from model import InputEmbedder, Transformer, TransformerICL, MultiTaskInputEmbe
 # from config_multi import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from configs.config_multi2 import TransformerConfig, TrainDataConfig, IWLDataConfig, ICLDataConfig, ICL2DataConfig, MainConfig
 from argparse import ArgumentParser
-from utils import visalize_attention, example_label_extract_attention, metrics_for_circuit
+from utils import visalize_attention, example_label_extract_attention, metrics_for_circuit, visalize_attention_for_ih
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -123,7 +123,7 @@ def main(config, save_dir, project_name):
             for task_i in range(modelconfig.num_tasks):
                 wandb.log({f"train/task{task_i}_acc":task_dict[task_i]}, step=step)
         
-        if step % trainconfig.every_eval == 0:
+        if step % trainconfig.every_eval == 1:
             model.eval()
             with torch.no_grad():
 
@@ -154,7 +154,9 @@ def main(config, save_dir, project_name):
                     wandb.log(atten_log)
                     metrics_log = metrics_for_circuit(model, layer_i, n_ctx=modelconfig.n_ctx)
                     wandb.log(metrics_log)
-                del attn_img, iwl_acc, icl_acc, icl2_acc, icl3_acc
+                    attn_img_for_ih = visalize_attention_for_ih(model, layer_i)
+                    wandb.log({f"attention_ih/layer_{layer_i}_for_ih":[wandb.Image(attn_img_for_ih)]})
+                del attn_img, attn_img_for_ih, iwl_acc, icl_acc, icl2_acc, icl3_acc
                 
             os.makedirs(os.path.join(save_dir, config.exp_name), exist_ok=True)
             torch.save(model.state_dict(), os.path.join(save_dir, config.exp_name, config.exp_name+"_"+str(step)+".pt"))
@@ -185,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_standard_transformer", action="store_true")
     parser.add_argument("--num_atten_layer", type=int, default=2)
     parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--optimize_step", type=int, default=int(4e5))
+    parser.add_argument("--optimize_step", type=int, default=int(1e6))
     parser.add_argument("--num_heads", type=int, default=1)
     parser.add_argument("--causal_mask_type", type=lambda x: x.split(","), default=["None", "None"])
     parser.add_argument("--project_name", type=str, default="multiple_phase_base")

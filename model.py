@@ -116,6 +116,7 @@ class Attention(nn.Module):
         self.d_head = d_head
         self.scaled = scaled
         self.n_ctx = n_ctx
+        self.atten_matrix_for_ih = None
         
     def forward(self, x):
         k = torch.einsum("ihd,bpd->biph", self.W_K, x)
@@ -130,6 +131,7 @@ class Attention(nn.Module):
         else:
             attn_matrix = F.softmax(attn_scores_masked, dim=-1)
         self.set_attention_matrix(attn_matrix.detach().cpu())
+        self.set_attention_matrix_for_ih(attn_matrix.detach().cpu())
         z = torch.einsum("biph,biqp->biqh", v, attn_matrix)
         z_flat = einops.rearrange(z, "b i q h -> b q (i h)")
         out = torch.einsum("df,bqf->bqd", self.W_O, z_flat)
@@ -139,6 +141,12 @@ class Attention(nn.Module):
     def set_attention_matrix(self, attn_matrix):
         for i in range(self.atten_matrix.shape[0]):
             self.atten_matrix[i] = attn_matrix.mean(dim=0)[i]
+    
+    def set_attention_matrix_for_ih(self, attn_matrix):
+        self.atten_matrix_for_ih = attn_matrix
+        
+    def get_attention_matrix_for_ih(self):
+        return self.atten_matrix_for_ih
     
     def get_attention_matrix(self):
         return self.atten_matrix
@@ -371,8 +379,10 @@ class TransformerBlock(nn.Module):
     
     def get_attention_matrix(self):
         return self.attn.get_attention_matrix()
-
-
+    
+    def get_attention_matrix_for_ih(self):
+        return self.attn.get_attention_matrix_for_ih()
+    
 class InputEmbedder(nn.Module):
     """Input embedder."""
 
@@ -516,6 +526,9 @@ class Transformer(nn.Module):
     def get_attention_matrix(self, layer):
         return self.blocks[layer].get_attention_matrix()
 
+    def get_attention_matrix_for_ih(self, layer):
+        return self.blocks[layer].get_attention_matrix_for_ih()
+
 class TransformerICL(nn.Module):
     def __init__(self, embedder, config):
         super().__init__()
@@ -643,6 +656,10 @@ class TransformerICL(nn.Module):
                 
     def get_attention_matrix(self, layer):
         return self.atten_list[layer].get_attention_matrix()
+    
+    
+    def get_attention_matrix_for_ih(self, layer):
+        return self.atten_list[layer].get_attention_matrix_for_ih()
     
     def set_causal_mask(self, layer, causal_mask_type):
         print("set_causal_mask", causal_mask_type)
