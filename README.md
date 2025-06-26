@@ -3,6 +3,8 @@ Arixiv link : https://arxiv.org/abs/2505.16694
 
 ![overview](acc_gif.gif)
 
+## Quick Start
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1wj-BSewnoC3cMfkv6mID-7C8L3bBXchG?usp=sharing)
 
 ## Environment
 ```bash
