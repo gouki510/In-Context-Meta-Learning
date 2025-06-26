@@ -1,5 +1,8 @@
-# Induction-head
+# Beyond Induction Heads: In-Context Meta Learning Induces Multi-Phase Circuit Emergence
 Arixiv link : https://arxiv.org/abs/2505.16694 
+
+![overview](acc_gif.gif)
+
 
 ## Environment
 ```bash
@@ -13,4 +16,16 @@ pip install -r requirements.txt
 ## Run
 ```bash
 python train.py --ways B --num_class K --eps Epsilon --alpha Alpha --gpu GPU
+```
+
+## Citation
+```
+@inproceedings{
+minegishi2025beyond,
+title={Beyond Induction Heads: In-Context Meta Learning Induces Multi-Phase Circuit Emergence},
+author={Gouki Minegishi and Hiroki Furuta and Shohei Taniguchi and Yusuke Iwasawa and Yutaka Matsuo},
+booktitle={Forty-second International Conference on Machine Learning},
+year={2025},
+url={https://openreview.net/forum?id=Xw01vF13aV}
+}
 ```
